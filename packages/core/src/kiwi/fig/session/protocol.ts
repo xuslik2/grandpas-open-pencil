@@ -6,8 +6,10 @@ import type { FigPopulationDelta } from '#core/kiwi/fig/population/delta'
 
 export interface FigSessionOpenRequest {
   type: 'open'
-  originalBuffer: ArrayBuffer
-  archiveBuffer: ArrayBuffer
+  // Single buffer, both parsed from and retained as the archive snapshot —
+  // parsing only reads it, so one copy safely serves both purposes instead
+  // of transferring two independent duplicates of a potentially huge file.
+  buffer: ArrayBuffer
   options?: FigImportOptions
   port: MessagePort
 }

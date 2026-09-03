@@ -102,16 +102,18 @@ function parseViaWorker(buffer: ArrayBuffer, options: ParseFigFileOptions): Prom
       worker.terminate()
       reject(new Error(err.message || 'Worker failed to parse .fig file'))
     }
-    const workerBuffer = buffer.slice(0)
-    const archiveBuffer = buffer.slice(0)
+    // One copy, transferred (not cloned) to the worker — it both parses
+    // from this buffer and retains it as the archive snapshot. Sending two
+    // independent duplicates here used to double the peak memory cost for
+    // every file open, which mattered a lot for large (100MB+) .fig files.
+    const transferBuffer = buffer.slice(0)
     const request: FigSessionOpenRequest = {
       type: 'open',
-      originalBuffer: workerBuffer,
-      archiveBuffer,
+      buffer: transferBuffer,
       options: { populate: options.populate },
       port: channel.port2
     }
-    worker.postMessage(request, [workerBuffer, archiveBuffer, channel.port2])
+    worker.postMessage(request, [transferBuffer, channel.port2])
   })
 }
 
@@ -121,14 +123,18 @@ export async function parseFigFile(
 ): Promise<SceneGraph> {
   options.signal?.throwIfAborted()
   if (typeof Worker !== 'undefined' && IS_BROWSER) {
-    const copy = buffer.slice(0)
+    // parseViaWorker only ever transfers its own internal slice of `buffer`
+    // (see transferBuffer below), never `buffer` itself — so it's still
+    // valid here on failure, with no need to pre-copy it "just in case"
+    // on every open (that copy used to cost a full extra file-size
+    // allocation on the common, successful path too).
     try {
       return await parseViaWorker(buffer, options)
     } catch (error) {
       if (options.signal?.aborted) throw error
       console.warn('Worker parsing failed, falling back to main thread:', error)
-      const graph = parseFigFileSync(copy, options)
-      registerOriginalArchiveRequest(graph, async () => new Uint8Array(copy.slice(0)))
+      const graph = parseFigFileSync(buffer, options)
+      registerOriginalArchiveRequest(graph, async () => new Uint8Array(buffer.slice(0)))
       return graph
     }
   }

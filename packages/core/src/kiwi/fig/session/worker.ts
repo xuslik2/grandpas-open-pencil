@@ -73,10 +73,12 @@ self.onmessage = (event: MessageEvent<FigSessionOpenRequest>) => {
   port = request.port
   port.onmessage = (message: MessageEvent<FigSessionRequest>) => handleRequest(message.data)
   port.start()
-  originalArchive = new Uint8Array(request.archiveBuffer)
+  // A view over the transferred buffer, not a copy — parseFigBuffer below
+  // only reads from it, so it's safe for both to reference the same bytes.
+  originalArchive = new Uint8Array(request.buffer)
   try {
     const { nodeChanges, blobs, images, figKiwiVersion, figSchemaDeflated } = parseFigBuffer(
-      request.originalBuffer,
+      request.buffer,
       (pages) => respond({ type: 'page-manifest', pages })
     )
     const parsedGraph = importNodeChanges(nodeChanges, blobs, new Map(images), request.options)
