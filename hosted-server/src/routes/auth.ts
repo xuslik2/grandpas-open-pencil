@@ -3,8 +3,7 @@ import { z } from 'zod'
 import { pool } from '../db/client.js'
 import { hashPassword, verifyPassword } from '../auth/password.js'
 import { createSession, currentUser, destroySession } from '../auth/session.js'
-import { hashToken, issueToken } from '../auth/token.js'
-import { requireAuth, requireTeamRole, teamIdFromParam } from '../middleware/authz.js'
+import { hashToken } from '../auth/token.js'
 
 export const authRoutes = new Hono()
 
@@ -42,37 +41,9 @@ authRoutes.get('/me', async (c) => {
   return c.json({ user })
 })
 
-const createInviteSchema = z.object({
-  email: z.string().email(),
-  role: z.enum(['viewer', 'editor', 'admin']),
-})
-
-const INVITE_TTL_DAYS = 14
-
-// Only team admins/owners can invite. requireAuth must run first.
-authRoutes.post(
-  '/teams/:teamId/invites',
-  requireAuth,
-  requireTeamRole('admin', teamIdFromParam),
-  async (c) => {
-    const parsed = createInviteSchema.safeParse(await c.req.json().catch(() => null))
-    if (!parsed.success) return c.json({ error: 'invalid request' }, 400)
-
-    const user = c.get('user')
-    const teamId = c.req.param('teamId')
-    const [token, tokenHash] = issueToken()
-    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000)
-
-    await pool.query(
-      `insert into invites (email, team_id, role, token_hash, invited_by, expires_at)
-       values ($1, $2, $3, $4, $5, $6)`,
-      [parsed.data.email, teamId, parsed.data.role, tokenHash, user.id, expiresAt]
-    )
-
-    // No SMTP wired yet (Phase 1 MVP) — the admin shares this link manually.
-    return c.json({ inviteUrl: `/invite/${token}` })
-  }
-)
+// Invite creation lives in routes/teams.ts (POST /api/teams/:teamId/invites) —
+// it's team-scoped and admin-gated, so it belongs with the other team routes.
+// This file only handles the unauthenticated invite-acceptance flow below.
 
 authRoutes.get('/invites/:token', async (c) => {
   const { rows } = await pool.query(
