@@ -126,6 +126,17 @@ watch(lastDocumentMove, (move) => {
   if (move && move.fromProjectId === selectedProject.value?.id) void workspace.refresh()
 })
 
+// This component stays mounted while navigating directly from one
+// project's detail view to another via the sidebar (selectedProject just
+// changes value, no v-if remount) — refresh() must re-run on every such
+// change, not just once at initial mount.
+watch(
+  () => selectedProject.value?.id,
+  (id, previousId) => {
+    if (id && id !== previousId) void workspace.refresh()
+  }
+)
+
 void workspace.refresh()
 </script>
 
