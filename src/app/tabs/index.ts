@@ -35,6 +35,7 @@ import {
 import { toast } from '@/app/shell/ui'
 import { getLocalCanvasStore } from '@/app/storage/local-store'
 import { seedStorageCanvasFromRemote } from '@/app/storage/sync/persist'
+import { onStorageWorkspaceEvent } from '@/app/storage/workspace/events'
 import { createFileOpenCoordinator } from '@/app/tabs/open/coordinator'
 import { findTabByFileIdentity } from '@/app/tabs/open/identity'
 
@@ -307,6 +308,49 @@ function findStorageTab(providerId: string, documentId: string): Tab | undefined
     const binding = tab.store.getStorageBinding()
     return binding?.providerId === providerId && binding.documentId === documentId
   })
+}
+
+// Dashboard card thumbnails: re-render and upload the first page whenever
+// a storage-bound document finishes syncing. Unlike cacheOpenedFigCover
+// (local files, above), this doesn't require a page named "Cover" — any
+// provider whose adapter implements putThumbnail gets one from whatever
+// the first page is. Best-effort: skipped if the document isn't open
+// right now or its renderer isn't ready yet, since there's nothing to
+// rasterize without a live renderer — the next successful save while
+// open will catch it.
+onStorageWorkspaceEvent((event) => {
+  if (event.kind !== 'synced' || !event.documentId) return
+  void updateStorageDocumentThumbnail(event.providerId, event.documentId)
+})
+
+async function updateStorageDocumentThumbnail(
+  providerId: string,
+  documentId: string
+): Promise<void> {
+  const tab = findStorageTab(providerId, documentId)
+  if (!tab) return
+  const { renderer, graph } = tab.store
+  if (!renderer) return
+  const pageId = graph.getPages()[0]?.id
+  if (!pageId) return
+
+  const bytes = renderThumbnail(
+    renderer.ck,
+    renderer,
+    graph,
+    pageId,
+    RECENT_FILE_THUMBNAIL_SIZE,
+    RECENT_FILE_THUMBNAIL_SIZE
+  )
+  if (!bytes) return
+
+  const adapter = createActiveStorageAdapter(providerId)
+  if (!adapter.putThumbnail) return
+  try {
+    await adapter.putThumbnail(documentId, bytes)
+  } catch (error) {
+    console.warn('[Storage] Failed to update document thumbnail:', error)
+  }
 }
 
 function failPreparation(
