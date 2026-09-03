@@ -558,44 +558,54 @@ export async function openFileInNewTab(
     const importedToHostedStorage = isHostedStorageActive()
     const firstPageId = imported.getPages()[0]?.id
     if (!isFig && firstPageId) computeAllLayouts(imported, firstPageId)
-    await showImportedGraph(
-      store,
-      imported,
-      () => {
-        if (importedToHostedStorage) {
-          // Hosted deployments: an imported file becomes a new document
-          // owned by the team, like "+ New design" — not a reference to
-          // the local filesystem. setDocumentSource's setStorageBinding
-          // (null) would otherwise silently strip autosave's only save
-          // target — confirmed by testing: imports never reached the
-          // server, they just lived in the tab until it was closed.
-          //
-          // markSaved: false matters here and not for a blank "+ New
-          // design": by this point applyImportedDocument already
-          // populated the graph (real content, sceneVersion > 0), so the
-          // normal "just bound, mark current version as already saved"
-          // behavior would silently treat that imported content as saved
-          // without ever writing it. The actual requestSave() call is
-          // deferred until after showImportedGraph resolves (below) —
-          // calling it here, still inside this same preparation/loading
-          // session, raced its own export against showImportedGraph's
-          // later switchPage/fitCurrentPageToViewport steps and blew the
-          // load session's timeout budget (confirmed by testing).
-          const binding = store.getStorageBinding() ?? {
-            providerId: activeStorageProviderID.value,
-            documentId: crypto.randomUUID()
+    // In a finally, not after the await: a large document can import and
+    // display fine but still throw here when the renderer's first paint
+    // exceeds the load session's timeout. That used to cost the whole
+    // import — the document was on screen but never reached the team's
+    // storage, so closing the tab lost it. The binding check keeps this
+    // honest: it's only set once applyImportedDocument has actually
+    // succeeded, so a genuine decode failure still saves nothing.
+    try {
+      await showImportedGraph(
+        store,
+        imported,
+        () => {
+          if (importedToHostedStorage) {
+            // Hosted deployments: an imported file becomes a new document
+            // owned by the team, like "+ New design" — not a reference to
+            // the local filesystem. setDocumentSource's setStorageBinding
+            // (null) would otherwise silently strip autosave's only save
+            // target — confirmed by testing: imports never reached the
+            // server, they just lived in the tab until it was closed.
+            //
+            // markSaved: false matters here and not for a blank "+ New
+            // design": by this point applyImportedDocument already
+            // populated the graph (real content, sceneVersion > 0), so
+            // the normal "just bound, mark current version as already
+            // saved" behavior would silently treat that imported content
+            // as saved without ever writing it. The requestSave() itself
+            // happens once showImportedGraph settles (see finally) —
+            // calling it here, still inside this same preparation
+            // session, raced its own export against the later
+            // switchPage/fitCurrentPageToViewport steps and blew the
+            // load session's timeout budget (confirmed by testing).
+            const binding = store.getStorageBinding() ?? {
+              providerId: activeStorageProviderID.value,
+              documentId: crypto.randomUUID()
+            }
+            store.setStorageDocumentSource(binding, file.name.replace(/\.[^.]+$/i, ''), {
+              markSaved: false
+            })
+          } else {
+            store.setDocumentSource(file.name, sourceFormat, handle, path)
+            if (isFig && path) watchOpenedFigCover(path, store)
           }
-          store.setStorageDocumentSource(binding, file.name.replace(/\.[^.]+$/i, ''), {
-            markSaved: false
-          })
-        } else {
-          store.setDocumentSource(file.name, sourceFormat, handle, path)
-          if (isFig && path) watchOpenedFigCover(path, store)
-        }
-      },
-      load
-    )
-    if (importedToHostedStorage) void store.requestSave()
+        },
+        load
+      )
+    } finally {
+      if (importedToHostedStorage && store.getStorageBinding()) void store.requestSave()
+    }
     if (isFig && path) {
       void cacheOpenedFigCover(path, store).catch((error) => {
         console.warn('[Recent files] Failed to cache the Cover thumbnail', error)
@@ -606,7 +616,13 @@ export async function openFileInNewTab(
   } catch (error) {
     failPreparation(load, 'decode-failed', error)
     completion.reject(error)
-    if (created) {
+    // Only discard the tab when nothing usable was imported. A document
+    // whose content loaded but whose first paint timed out is on screen
+    // and (in hosted mode) already saved — closing it would throw away
+    // work the user can plainly see, which is worse than leaving a slow
+    // document open.
+    const importedSomething = store.graph.getPages().length > 0 && store.graph.nodes.size > 1
+    if (created && !importedSomething) {
       const tab = getTabForStore(store)
       if (tab) await closeTab(tab.id)
     }
