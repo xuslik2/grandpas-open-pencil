@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onScopeDispose, ref, watch, type ComponentPublicInstance } from 'vue'
+import { draggable } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { useDocumentWorkspace } from '@open-pencil/vue'
 import { listProjectDocuments } from '@/app/hosted/hierarchy/api'
-import { ensureFavoritesLoaded, favorites, setFavorited } from '@/app/hosted/hierarchy/store'
+import {
+  ensureFavoritesLoaded,
+  favorites,
+  lastDocumentMove,
+  setFavorited
+} from '@/app/hosted/hierarchy/store'
 import { selectedProject } from '@/app/hosted/navigation/store'
 import { createDocumentInProject, openStorageDocumentInNewTab } from '@/app/tabs'
 
 const openError = ref<string | null>(null)
+const draggingDocumentId = ref<string | null>(null)
 
 void ensureFavoritesLoaded()
 
@@ -77,6 +84,48 @@ function relativeTime(iso: string): string {
 
 const hasDocuments = computed(() => documents.value.length > 0)
 
+// Drag a document card onto a project row in the sidebar to move it there.
+// This is a separate, independent drop-target kind (`dragKind: 'document'`)
+// registered by Sidebar.vue on the *same* project rows that already handle
+// project reordering — see Sidebar.vue for why the two coexist safely.
+const registeredCards = new Map<string, () => void>()
+
+function setupDocumentCardRef(
+  value: Element | ComponentPublicInstance | null,
+  document: { id: string }
+) {
+  registeredCards.get(document.id)?.()
+  registeredCards.delete(document.id)
+  const element = value instanceof HTMLElement ? value : null
+  if (!element || !selectedProject.value) return
+
+  const sourceProjectId = selectedProject.value.id
+  const cleanup = draggable({
+    element,
+    getInitialData: () => ({
+      dragKind: 'document',
+      documentId: document.id,
+      sourceProjectId
+    }),
+    onDragStart: () => {
+      draggingDocumentId.value = document.id
+    },
+    onDrop: () => {
+      draggingDocumentId.value = null
+    }
+  })
+  registeredCards.set(document.id, cleanup)
+}
+
+onScopeDispose(() => {
+  for (const cleanup of registeredCards.values()) cleanup()
+  registeredCards.clear()
+})
+
+watch(lastDocumentMove, (move) => {
+  if (move && move.fromProjectId === selectedProject.value?.id) void workspace.refresh()
+})
+
 void workspace.refresh()
 </script>
 
@@ -108,7 +157,13 @@ void workspace.refresh()
       v-if="hasDocuments"
       class="grid grid-cols-1 gap-x-5 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]"
     >
-      <div v-for="document in documents" :key="document.id" class="group relative min-w-0">
+      <div
+        v-for="document in documents"
+        :key="document.id"
+        :ref="(value) => setupDocumentCardRef(value, document)"
+        class="group relative min-w-0"
+        :class="{ 'opacity-40': draggingDocumentId === document.id }"
+      >
         <button
           type="button"
           class="w-full text-left"

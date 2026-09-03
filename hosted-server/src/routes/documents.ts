@@ -70,6 +70,7 @@ documentRoutes.get(
 const patchDocumentSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   folderId: z.string().uuid().nullable().optional(),
+  projectId: z.string().uuid().optional(),
 })
 
 documentRoutes.patch(
@@ -79,14 +80,44 @@ documentRoutes.patch(
     const parsed = patchDocumentSchema.safeParse(await c.req.json().catch(() => null))
     if (!parsed.success) return c.json({ error: 'invalid request' }, 400)
 
+    // Moving to a different project is only allowed within the same team —
+    // the drag source (sidebar project list) only ever shows the current
+    // team's projects, so a cross-team id here would only ever come from a
+    // tampered request. requireTeamRole already confirmed editor+ on the
+    // document's own team; this confirms the target project is that same team.
+    if (parsed.data.projectId) {
+      const { rows: teamRows } = await pool.query(
+        `select p.team_id as current_team_id, tp.team_id as target_team_id
+           from documents d
+           join projects p on p.id = d.project_id
+           left join projects tp on tp.id = $2
+          where d.id = $1`,
+        [c.req.param('documentId'), parsed.data.projectId]
+      )
+      const match = teamRows[0]
+      if (!match?.target_team_id || match.target_team_id !== match.current_team_id) {
+        return c.json({ error: 'invalid project' }, 400)
+      }
+    }
+
     const { rows } = await pool.query(
       `update documents set
          name = coalesce($2, name),
-         folder_id = case when $3::text is not null then $3::uuid else folder_id end,
+         project_id = coalesce($3::uuid, project_id),
+         folder_id = case
+           when $3::uuid is not null then null
+           when $4::text is not null then $4::uuid
+           else folder_id
+         end,
          updated_at = now()
        where id = $1 and deleted_at is null
        returning id, project_id, folder_id, name, updated_at, revision`,
-      [c.req.param('documentId'), parsed.data.name ?? null, parsed.data.folderId ?? null]
+      [
+        c.req.param('documentId'),
+        parsed.data.name ?? null,
+        parsed.data.projectId ?? null,
+        parsed.data.folderId ?? null
+      ]
     )
     if (!rows[0]) return c.json({ error: 'not found' }, 404)
     return c.json({ document: rows[0] })

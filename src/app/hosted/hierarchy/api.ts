@@ -135,6 +135,13 @@ export function listFavoriteDocuments(): Promise<ProjectDocument[]> {
   )
 }
 
+export function moveDocument(documentId: string, projectId: string): Promise<void> {
+  return request(`/documents/${documentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ projectId })
+  })
+}
+
 export function favoriteDocument(id: string): Promise<void> {
   return request(`/documents/${id}/favorite`, { method: 'POST' })
 }

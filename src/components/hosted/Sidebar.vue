@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, type ComponentPublicInstance } from 'vue'
+import { computed, onMounted, onScopeDispose, ref, type ComponentPublicInstance } from 'vue'
 import {
   DropdownMenuContent,
   DropdownMenuItem,
@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from 'reka-ui'
+import { dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { useFlatReorderDrag } from '@open-pencil/vue'
 import type { Project, ProjectDocument } from '@/app/hosted/hierarchy/api'
 import {
@@ -17,6 +18,7 @@ import {
   ensureFavoritesLoaded,
   ensureProjectsLoaded,
   favorites,
+  moveDocumentToProject,
   projects,
   reorderProjectsLocally,
   setFavorited,
@@ -101,11 +103,54 @@ function dropPosition(project: Project): 'before' | 'after' | undefined {
   return undefined
 }
 
+// Separate, independent drop-target kind layered onto the same project
+// rows: a document card dragged from ProjectDocuments.vue (dragKind:
+// 'document') moves that file into this project. It coexists with the
+// reorder drop-target above rather than replacing it — pragmatic-drag-
+// and-drop supports multiple independent dropTargetForElements on one
+// element, each filtering via its own canDrop. The reorder system's own
+// canDrop is looser (any source lacking a matching `id`), so it may also
+// "accept" a document drag and flash its before/after line, but its
+// monitor bails out safely since a document drag carries no `id` field —
+// see useFlatReorderDrag.ts's `sourceId` null-check.
+const registeredDocumentDropTargets = new Map<string, () => void>()
+const documentDropTargetId = ref<string | null>(null)
+
 function setupProjectRowRef(value: Element | ComponentPublicInstance | null, project: Project) {
-  projectReorder.setupItem(value instanceof HTMLElement ? value : null, () => ({
-    id: project.id
-  }))
+  const element = value instanceof HTMLElement ? value : null
+  projectReorder.setupItem(element, () => ({ id: project.id }))
+
+  registeredDocumentDropTargets.get(project.id)?.()
+  registeredDocumentDropTargets.delete(project.id)
+  if (!element) return
+
+  const cleanup = dropTargetForElements({
+    element,
+    getData: () => ({ projectId: project.id }),
+    canDrop: ({ source }) =>
+      source.data.dragKind === 'document' && source.data.sourceProjectId !== project.id,
+    onDragEnter: () => {
+      documentDropTargetId.value = project.id
+    },
+    onDragLeave: () => {
+      if (documentDropTargetId.value === project.id) documentDropTargetId.value = null
+    },
+    onDrop: ({ source }) => {
+      documentDropTargetId.value = null
+      const documentId = typeof source.data.documentId === 'string' ? source.data.documentId : null
+      const sourceProjectId =
+        typeof source.data.sourceProjectId === 'string' ? source.data.sourceProjectId : null
+      if (!documentId || !sourceProjectId) return
+      void moveDocumentToProject(documentId, sourceProjectId, project.id)
+    }
+  })
+  registeredDocumentDropTargets.set(project.id, cleanup)
 }
+
+onScopeDispose(() => {
+  for (const cleanup of registeredDocumentDropTargets.values()) cleanup()
+  registeredDocumentDropTargets.clear()
+})
 
 const hasFavorites = computed(() => favorites.value.length > 0)
 </script>
@@ -257,7 +302,8 @@ const hasFavorites = computed(() => favorites.value.length > 0)
             class="flex w-full items-center gap-1.5 rounded px-1 py-1.5 text-left text-xs hover:bg-hover"
             :class="{
               'bg-hover font-medium': selectedProject?.id === project.id,
-              'opacity-40': projectReorder.draggingId.value === project.id
+              'opacity-40': projectReorder.draggingId.value === project.id,
+              'ring-1 ring-inset ring-accent bg-hover': documentDropTargetId === project.id
             }"
             @click="selectedProject = project"
           >

@@ -13,6 +13,7 @@ import {
   listFavoriteDocuments,
   listProjects,
   listTeams,
+  moveDocument as apiMoveDocument,
   reorderProjects as apiReorderProjects,
   unfavoriteDocument as apiUnfavoriteDocument,
   type Project,
@@ -84,4 +85,24 @@ export function reorderProjectsLocally(orderedIds: string[]): void {
   const byId = new Map(projects.value.map((p) => [p.id, p]))
   projects.value = orderedIds.map((id) => byId.get(id)).filter((p): p is Project => !!p)
   if (currentTeam.value) void apiReorderProjects(currentTeam.value.id, orderedIds)
+}
+
+// Fires after a document is dragged from a project's file grid onto a
+// different project in the sidebar. ProjectDocuments.vue watches this to
+// drop the moved file from its currently-open project's list — the two
+// components don't otherwise share document-list state.
+export const lastDocumentMove = ref<{
+  documentId: string
+  fromProjectId: string
+  toProjectId: string
+} | null>(null)
+
+export async function moveDocumentToProject(
+  documentId: string,
+  fromProjectId: string,
+  toProjectId: string
+): Promise<void> {
+  if (fromProjectId === toProjectId) return
+  await apiMoveDocument(documentId, toProjectId)
+  lastDocumentMove.value = { documentId, fromProjectId, toProjectId }
 }
