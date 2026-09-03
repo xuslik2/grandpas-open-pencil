@@ -219,8 +219,24 @@ function createPopulationWorkerClient(
     })
   }
   if (port) {
-    port.onmessage = (event: MessageEvent<FigSessionResponse>) =>
-      receive(event.data as WorkerResult)
+    // registerOriginalArchiveRequest (see read.ts) shares this same port
+    // for its own 'original-archive-result' responses, set up before this
+    // handler replaces port.onmessage. Chain to whatever was already
+    // there for message types this client doesn't own, instead of
+    // silently dropping them — previously, requesting the original
+    // archive (exportFigFile's fast path, hit by any save/export of an
+    // unmodified freshly-imported document) hung forever, since its
+    // response arrived here and matched neither 'population-error' nor
+    // any pending population request, so receive() just returned.
+    const previousOnMessage = port.onmessage
+    port.onmessage = (event: MessageEvent<FigSessionResponse>) => {
+      const data = event.data as WorkerResult
+      if (data.type === 'population-result' || data.type === 'population-error') {
+        receive(data)
+        return
+      }
+      previousOnMessage?.call(port, event)
+    }
     port.start()
   } else {
     worker.onmessage = (event: MessageEvent<WorkerResult>) => receive(event.data)
