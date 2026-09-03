@@ -21,7 +21,9 @@ import { CANVAS_BG_COLOR, IS_BROWSER, IS_TAURI } from '#core/constants'
 import { applyEnabledLibrariesPluginData } from '#core/io/formats/fig/library-metadata'
 import { findFigThumbnailPageId } from '#core/io/formats/fig/thumbnail-page'
 import { renderThumbnail } from '#core/io/formats/raster'
+import { collectImageHashes } from '#core/kiwi/fig/image-refs'
 import { populateAllLazyFigImportRoots } from '#core/kiwi/fig/lazy-import'
+import { ensureImagesLoaded } from '#core/kiwi/fig/population/client'
 import {
   sceneNodeToKiwi,
   fractionalPosition,
@@ -450,6 +452,21 @@ export async function exportFigFile(
   if (originalArchive) return originalArchive.slice()
   const graph = cloneSceneGraphForFigExport(sourceGraph)
   populateAllLazyFigImportRoots(graph)
+
+  // A large file opened with only some pages' images actually loaded
+  // (see image-refs.ts / population/client.ts) needs the rest fetched
+  // before a real (non-original-archive-passthrough) export — every
+  // page just got fully populated above, so this is the complete set of
+  // images the encoded output actually needs. Cached onto sourceGraph
+  // too so a later export of the same document doesn't refetch them.
+  const neededImageHashes = collectImageHashes(graph)
+  await ensureImagesLoaded(sourceGraph, sourceGraph.images, neededImageHashes)
+  for (const hash of neededImageHashes) {
+    if (graph.images.has(hash)) continue
+    const data = sourceGraph.images.get(hash)
+    if (data) graph.images.set(hash, data)
+  }
+
   await initCodec()
 
   // When the document was imported from a .fig file, preserve the original

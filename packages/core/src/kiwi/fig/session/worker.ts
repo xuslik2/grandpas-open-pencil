@@ -1,6 +1,7 @@
 import { parseFigBuffer } from '@open-pencil/fig'
 import type { SceneGraph } from '@open-pencil/scene-graph'
 
+import { collectImageHashes } from '#core/kiwi/fig/image-refs'
 import { importNodeChanges } from '#core/kiwi/fig/import'
 import { getLazyFigImportContext, populateLazyFigImportRoots } from '#core/kiwi/fig/lazy-import'
 import { serializeSceneGraph } from '#core/kiwi/fig/parse/transfer'
@@ -14,6 +15,11 @@ import type {
 let graph: SceneGraph | undefined
 let originalArchive: Uint8Array | undefined
 let port: MessagePort | undefined
+// Which image hashes the main thread already has — the initial 'graph'
+// response only includes images for the pages populated up front (see
+// below), so later 'images' requests (page switch, export) only need to
+// ship whatever hasn't crossed the port yet.
+let sentImageHashes = new Set<string>()
 
 function respond(message: FigSessionResponse): void {
   port?.postMessage(message)
@@ -48,9 +54,28 @@ function handleRequest(request: FigSessionRequest): void {
       ])
       return
     }
+    if (request.type === 'images') {
+      const images: Array<[string, Uint8Array]> = []
+      const transfer: Transferable[] = []
+      for (const hash of request.hashes) {
+        if (sentImageHashes.has(hash)) continue
+        const data = graph?.images.get(hash)
+        if (!data) continue
+        // Copy, not the retained bytes themselves — transferring those
+        // would neuter graph.images here, breaking any later population
+        // or export that still needs them from this same worker.
+        const copy = data.slice()
+        images.push([hash, copy])
+        transfer.push(copy.buffer)
+        sentImageHashes.add(hash)
+      }
+      port?.postMessage({ type: 'images-result', requestId: request.requestId, images }, transfer)
+      return
+    }
     if (request.type === 'dispose') {
       graph = undefined
       originalArchive = undefined
+      sentImageHashes = new Set()
       respond({ type: 'disposed' })
       port?.close()
       port = undefined
@@ -85,7 +110,23 @@ self.onmessage = (event: MessageEvent<FigSessionOpenRequest>) => {
     parsedGraph.figKiwiVersion = figKiwiVersion
     parsedGraph.figSchemaDeflated = figSchemaDeflated
     graph = request.options?.populate === 'first-page' ? parsedGraph : undefined
-    respond({ type: 'graph', graph: serializeSceneGraph(parsedGraph) })
+
+    const serialized = serializeSceneGraph(parsedGraph)
+    // For a lazily-populated open, only ship images the initially
+    // populated pages (first page + any component pages they depend on)
+    // actually reference — not every image in the file. graph.images
+    // itself keeps everything (still needed here for later 'images'
+    // requests as more pages get visited); this only trims what
+    // structured-clones across the port on this first response.
+    if (graph) {
+      const activeRootIds = getLazyFigImportContext(graph)?.populatedRootIds
+      if (activeRootIds) {
+        const initialHashes = collectImageHashes(graph, activeRootIds)
+        serialized.images = serialized.images.filter(([hash]) => initialHashes.has(hash))
+      }
+    }
+    for (const [hash] of serialized.images) sentImageHashes.add(hash)
+    respond({ type: 'graph', graph: serialized })
   } catch (error) {
     respond({ type: 'graph', error: error instanceof Error ? error.message : String(error) })
   }

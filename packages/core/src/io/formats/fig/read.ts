@@ -7,6 +7,7 @@ import { importNodeChanges } from '#core/kiwi/fig/import'
 import { deserializeSceneGraph } from '#core/kiwi/fig/parse/transfer'
 import {
   registerFigPopulationWorker,
+  registerImagesRequest,
   registerOriginalArchiveRequest
 } from '#core/kiwi/fig/population/client'
 import { createFigSessionWorker } from '#core/kiwi/fig/session/client'
@@ -39,6 +40,7 @@ function parseViaWorker(buffer: ArrayBuffer, options: ParseFigFileOptions): Prom
     const worker = createFigSessionWorker()
     const channel = new MessageChannel()
     const pendingArchives = new Map<string, (bytes: Uint8Array) => void>()
+    const pendingImages = new Map<string, (images: Array<[string, Uint8Array]>) => void>()
     const abort = () => {
       channel.port1.postMessage({ type: 'dispose' })
       channel.port1.close()
@@ -54,6 +56,13 @@ function parseViaWorker(buffer: ArrayBuffer, options: ParseFigFileOptions): Prom
         if (!resolveArchive) return
         pendingArchives.delete(e.data.requestId)
         resolveArchive(e.data.bytes)
+        return
+      }
+      if (e.data.type === 'images-result') {
+        const resolveImages = pendingImages.get(e.data.requestId)
+        if (!resolveImages) return
+        pendingImages.delete(e.data.requestId)
+        resolveImages(e.data.images)
         return
       }
       if (e.data.type === 'page-manifest') {
@@ -80,6 +89,15 @@ function parseViaWorker(buffer: ArrayBuffer, options: ParseFigFileOptions): Prom
                 const requestId = randomHex()
                 pendingArchives.set(requestId, resolveArchive)
                 channel.port1.postMessage({ type: 'original-archive', requestId })
+              })
+          )
+          registerImagesRequest(
+            graph,
+            (hashes) =>
+              new Promise<Array<[string, Uint8Array]>>((resolveImages) => {
+                const requestId = randomHex()
+                pendingImages.set(requestId, resolveImages)
+                channel.port1.postMessage({ type: 'images', requestId, hashes })
               })
           )
         } else {

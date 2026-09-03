@@ -2,10 +2,12 @@ import { limitAsync } from 'es-toolkit/promise'
 
 import type { Color } from '@open-pencil/scene-graph/primitives'
 
+import { collectImageHashes } from '#core/kiwi/fig/image-refs'
 import { populateLazyFigImportRoots } from '#core/kiwi/fig/lazy-import'
 import {
   canUseFigPopulationWorker,
-  createFigPopulationWorker
+  createFigPopulationWorker,
+  ensureImagesLoaded
 } from '#core/kiwi/fig/population/client'
 import { computeAllLayouts } from '#core/layout'
 import { fontManager } from '#core/text/fonts'
@@ -153,6 +155,22 @@ export function createPageActions(ctx: EditorContext) {
     await resolvePageFonts(pageId, page.name, options)
     throwIfAborted(options.signal)
     if (generation !== pageSwitchGeneration) return null
+
+    // A page's own fills already reference their images from the moment
+    // the file is imported, regardless of lazy instance-population state
+    // (see image-refs.ts) — but for a large file opened with only the
+    // first page's images actually loaded, switching to a different page
+    // needs to fetch whichever of its images weren't part of that initial
+    // set. A no-op (network round trip skipped entirely) once already
+    // fetched, since ensureImagesLoaded only asks for what's missing.
+    await ensureImagesLoaded(
+      ctx.graph,
+      ctx.graph.images,
+      collectImageHashes(ctx.graph, new Set([pageId]))
+    )
+    throwIfAborted(options.signal)
+    if (generation !== pageSwitchGeneration) return null
+
     if (ctx.getRenderer() || populated) {
       options.onProgress?.({ phase: 'layout', detail: page.name })
       computeAllLayouts(ctx.graph, pageId)

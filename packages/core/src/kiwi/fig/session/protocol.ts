@@ -26,6 +26,12 @@ export interface FigSessionOriginalArchiveRequest {
   requestId: string
 }
 
+export interface FigSessionImagesRequest {
+  type: 'images'
+  requestId: string
+  hashes: string[]
+}
+
 export interface FigSessionCancelRequest {
   type: 'cancel'
   requestId?: string
@@ -38,6 +44,7 @@ export interface FigSessionDisposeRequest {
 export type FigSessionRequest =
   | FigSessionPopulateRequest
   | FigSessionOriginalArchiveRequest
+  | FigSessionImagesRequest
   | FigSessionCancelRequest
   | FigSessionDisposeRequest
 
@@ -53,4 +60,5 @@ export type FigSessionResponse =
     }
   | { type: 'population-error'; requestId?: string; error: string }
   | { type: 'original-archive-result'; requestId: string; bytes: Uint8Array }
+  | { type: 'images-result'; requestId: string; images: Array<[string, Uint8Array]> }
   | { type: 'disposed' }

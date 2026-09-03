@@ -99,11 +99,59 @@ export async function requestOriginalArchive(graph: SceneGraph): Promise<Uint8Ar
     : null
 }
 
+// Requests specific image hashes (by content hash, not by page) from
+// whatever still holds the full decompressed set — the session worker,
+// for a document opened with populate: 'first-page'. Only the images
+// actually needed for the page being shown (or, for export, the images
+// referenced anywhere in the fully-populated graph) get fetched, instead
+// of every image in the file being decompressed and held in memory
+// twice (worker + main thread) up front — see image-refs.ts.
+const imagesRequests = new WeakMap<
+  SceneGraph,
+  (hashes: string[]) => Promise<Array<[string, Uint8Array]>>
+>()
+
+export function registerImagesRequest(
+  graph: SceneGraph,
+  request: (hashes: string[]) => Promise<Array<[string, Uint8Array]>>
+): void {
+  imagesRequests.set(graph, request)
+}
+
+export async function requestMissingImages(
+  graph: SceneGraph,
+  hashes: string[]
+): Promise<Array<[string, Uint8Array]>> {
+  if (hashes.length === 0) return []
+  const request = imagesRequests.get(graph)
+  if (!request) return []
+  return request(hashes)
+}
+
+/**
+ * Fetches and merges into `targetImages` whichever of `hashes` aren't
+ * already present. `requestGraph` is whichever graph has a fetcher
+ * registered (registerImagesRequest) — usually the same graph as
+ * `targetImages`' owner, except during export, where `targetImages`
+ * belongs to a throwaway clone but the fetcher lives on the original.
+ */
+export async function ensureImagesLoaded(
+  requestGraph: SceneGraph,
+  targetImages: Map<string, Uint8Array>,
+  hashes: Iterable<string>
+): Promise<void> {
+  const missing = [...hashes].filter((hash) => !targetImages.has(hash))
+  if (missing.length === 0) return
+  const fetched = await requestMissingImages(requestGraph, missing)
+  for (const [hash, data] of fetched) targetImages.set(hash, data)
+}
+
 export function releaseFigPopulationWorker(graph: SceneGraph): void {
   populationWorkers.get(graph)?.terminate()
   populationWorkers.delete(graph)
   originalArchiveRequests.get(graph)?.unbind()
   originalArchiveRequests.delete(graph)
+  imagesRequests.delete(graph)
 }
 
 export interface FigPopulationWorker {
