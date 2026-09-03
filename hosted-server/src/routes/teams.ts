@@ -47,3 +47,32 @@ teamRoutes.post('/:teamId/invites', requireTeamRole('admin', teamIdFromParam), a
   // No SMTP wired yet (Phase 1 MVP) — the admin shares this link manually.
   return c.json({ inviteUrl: `/invite/${token}` })
 })
+
+const createProjectSchema = z.object({
+  name: z.string().min(1).max(200),
+})
+
+// Any team member can see projects; creating one requires editor+.
+teamRoutes.get('/:teamId/projects', requireTeamRole('viewer', teamIdFromParam), async (c) => {
+  const { rows } = await pool.query(
+    `select id, name, created_by, created_at, archived_at
+       from projects
+      where team_id = $1 and archived_at is null
+      order by name`,
+    [c.req.param('teamId')]
+  )
+  return c.json({ projects: rows })
+})
+
+teamRoutes.post('/:teamId/projects', requireTeamRole('editor', teamIdFromParam), async (c) => {
+  const parsed = createProjectSchema.safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: 'invalid request' }, 400)
+
+  const user = c.get('user')
+  const { rows } = await pool.query(
+    `insert into projects (team_id, name, created_by) values ($1, $2, $3)
+     returning id, name, created_by, created_at, archived_at`,
+    [c.req.param('teamId'), parsed.data.name, user.id]
+  )
+  return c.json({ project: rows[0] }, 201)
+})
