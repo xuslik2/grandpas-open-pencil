@@ -56,6 +56,7 @@ create table projects (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references teams(id) on delete cascade,
   name text not null,
+  position integer not null default 0,
   created_by uuid not null references users(id),
   created_at timestamptz not null default now(),
   archived_at timestamptz

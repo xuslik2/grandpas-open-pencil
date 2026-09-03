@@ -1,33 +1,25 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDocumentWorkspace } from '@open-pencil/vue'
-import {
-  favoriteDocument,
-  listFavoriteDocuments,
-  listProjectDocuments,
-  unfavoriteDocument
-} from '@/app/hosted/hierarchy/api'
+import { listProjectDocuments } from '@/app/hosted/hierarchy/api'
+import { ensureFavoritesLoaded, favorites, setFavorited } from '@/app/hosted/hierarchy/store'
 import { selectedProject } from '@/app/hosted/navigation/store'
 import { createDocumentInProject, openStorageDocumentInNewTab } from '@/app/tabs'
 
 const openError = ref<string | null>(null)
-const favoritedIds = ref<Set<string>>(new Set())
 
-void listFavoriteDocuments().then((docs) => {
-  favoritedIds.value = new Set(docs.map((d) => d.id))
-})
+void ensureFavoritesLoaded()
 
-async function toggleFavorite(id: string) {
-  const next = new Set(favoritedIds.value)
-  const wasFavorited = next.has(id)
-  wasFavorited ? next.delete(id) : next.add(id)
-  favoritedIds.value = next
-  await (wasFavorited ? unfavoriteDocument(id) : favoriteDocument(id)).catch(() => {
-    // Resync from the server rather than trust the optimistic flip on failure.
-    void listFavoriteDocuments().then((docs) => {
-      favoritedIds.value = new Set(docs.map((d) => d.id))
-    })
-  })
+// Shared with the sidebar (app/hosted/hierarchy/store.ts) so starring a
+// file here updates the sidebar's Favorites list immediately, and vice
+// versa — same fix as the earlier project-list sync gap.
+const favoritedIds = computed(() => new Set(favorites.value.map((d) => d.id)))
+
+async function toggleFavorite(document: { id: string; name: string; updatedAt: string }) {
+  await setFavorited(
+    { id: document.id, name: document.name, updated_at: document.updatedAt, folder_id: null, has_thumbnail: false },
+    !favoritedIds.value.has(document.id)
+  )
 }
 
 const workspace = useDocumentWorkspace<{ id: string; name: string; updatedAt: string }>({
@@ -144,7 +136,7 @@ void workspace.refresh()
           class="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded bg-panel/80 text-muted opacity-0 hover:text-amber-400 group-hover:opacity-100"
           :class="{ 'opacity-100 text-amber-400': favoritedIds.has(document.id) }"
           :aria-label="favoritedIds.has(document.id) ? 'Remove from favorites' : 'Add to favorites'"
-          @click="toggleFavorite(document.id)"
+          @click="toggleFavorite(document)"
         >
           <icon-lucide-star class="size-3.5" :class="{ 'fill-current': favoritedIds.has(document.id) }" />
         </button>

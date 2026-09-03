@@ -24,9 +24,9 @@ import { createStorageWorkspaceSource } from '@/app/storage/workspace/source'
 import { openStorageDocumentInNewTab } from '@/app/tabs'
 import { selectedProject } from '@/app/hosted/navigation/store'
 import HomeSearchActions from '@/components/home/search/HomeSearchActions.vue'
-import FavoritesSection from '@/components/hosted/FavoritesSection.vue'
 import ProjectDocuments from '@/components/hosted/ProjectDocuments.vue'
 import ProjectsSection from '@/components/hosted/ProjectsSection.vue'
+import Sidebar from '@/components/hosted/Sidebar.vue'
 import Tip from '@/components/ui/Tip.vue'
 
 const isHostedMode = computed(() => activeStorageProviderID.value === 'hosted-server')
@@ -159,12 +159,10 @@ function formattedDate(updatedAt: string): string {
 </script>
 
 <template>
-  <main
-    class="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-app text-surface"
-    data-test-id="recent-files-home"
-  >
+  <main class="flex min-h-0 flex-1 overflow-hidden bg-app text-surface" data-test-id="recent-files-home">
+    <Sidebar v-if="isHostedMode" />
     <section
-      class="mx-auto flex w-full max-w-7xl flex-col pt-4 pr-[max(1rem,env(safe-area-inset-right))] pb-4 pl-[max(1rem,env(safe-area-inset-left))] sm:px-6 sm:py-5"
+      class="mx-auto flex w-full max-w-7xl flex-1 flex-col overflow-x-hidden overflow-y-auto pt-4 pr-[max(1rem,env(safe-area-inset-right))] pb-4 pl-[max(1rem,env(safe-area-inset-left))] sm:px-6 sm:py-5"
     >
       <HomeSearchActions v-model="query" @new-document="emit('new-document')" />
 
@@ -322,7 +320,6 @@ function formattedDate(updatedAt: string): string {
       </section>
 
       <template v-if="isHostedMode">
-        <FavoritesSection />
         <ProjectDocuments v-if="selectedProject" />
         <ProjectsSection v-else />
       </template>

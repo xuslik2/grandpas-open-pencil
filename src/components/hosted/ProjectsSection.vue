@@ -1,47 +1,18 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import {
-  createProject,
-  listProjects,
-  listTeams,
-  type Project,
-  type Team
-} from '@/app/hosted/hierarchy/api'
+import { ensureProjectsLoaded, projects } from '@/app/hosted/hierarchy/store'
 import { selectedProject } from '@/app/hosted/navigation/store'
 
-const team = ref<Team | null>(null)
-const projects = ref<Project[]>([])
+// Project list itself is shared state (app/hosted/hierarchy/store.ts) with
+// the sidebar, which owns creation/reordering — this is just the card
+// grid view of the same data, so creating or dragging a project in the
+// sidebar shows up here immediately without a separate fetch.
 const loading = ref(true)
-const error = ref<string | null>(null)
-const creating = ref(false)
-const newProjectName = ref('')
 
-async function load() {
-  loading.value = true
-  error.value = null
-  try {
-    const teams = await listTeams()
-    team.value = teams[0] ?? null
-    if (team.value) projects.value = await listProjects(team.value.id)
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function submitNewProject() {
-  const name = newProjectName.value.trim()
-  if (!name || !team.value) return
-  try {
-    const project = await createProject(team.value.id, name)
-    projects.value = [...projects.value, project].sort((a, b) => a.name.localeCompare(b.name))
-    newProjectName.value = ''
-    creating.value = false
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
-  }
-}
+onMounted(async () => {
+  await ensureProjectsLoaded()
+  loading.value = false
+})
 
 function relativeTime(iso: string | null): string {
   if (!iso) return ''
@@ -55,47 +26,11 @@ function relativeTime(iso: string | null): string {
   if (days < 30) return `${days}d ago`
   return new Date(iso).toLocaleDateString()
 }
-
-onMounted(load)
-defineExpose({ reload: load })
 </script>
 
 <template>
-  <section class="mt-7">
-    <div class="mb-3 flex items-center gap-3">
-      <div class="min-w-0 flex-1">
-        <h2 class="text-base font-semibold">{{ team?.name ?? 'Projects' }}</h2>
-        <p class="mt-0.5 text-xs text-muted">Projects</p>
-      </div>
-      <button
-        v-if="!creating"
-        type="button"
-        class="flex items-center gap-1 rounded border border-border px-2.5 py-1.5 text-xs hover:bg-hover"
-        @click="creating = true"
-      >
-        <icon-lucide-plus class="size-3.5" />
-        New project
-      </button>
-      <form v-else class="flex items-center gap-1.5" @submit.prevent="submitNewProject">
-        <input
-          v-model="newProjectName"
-          type="text"
-          autofocus
-          placeholder="Project name"
-          class="w-40 rounded border border-border bg-input px-2 py-1.5 text-xs"
-          @keydown.escape="creating = false"
-        />
-        <button
-          type="submit"
-          class="rounded bg-accent px-2.5 py-1.5 text-xs text-white"
-          :disabled="!newProjectName.trim()"
-        >
-          Create
-        </button>
-      </form>
-    </div>
-
-    <p v-if="error" class="mb-3 text-xs text-danger" role="alert">{{ error }}</p>
+  <section class="mt-2">
+    <h2 class="mb-3 text-base font-semibold">Projects</h2>
 
     <div
       v-if="loading"
@@ -144,7 +79,7 @@ defineExpose({ reload: load })
       v-else
       class="rounded-lg border border-dashed border-border px-4 py-4 text-center text-xs text-muted sm:py-6"
     >
-      No projects yet — create one to get started.
+      No projects yet — use "+" in the sidebar to create one.
     </div>
   </section>
 </template>

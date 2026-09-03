@@ -21,6 +21,7 @@ export type Team = { id: string; name: string; slug: string; role: string }
 export type Project = {
   id: string
   name: string
+  position: number
   created_at: string
   latest_document_id: string | null
   latest_document_updated_at: string | null
@@ -48,6 +49,13 @@ export function createProject(teamId: string, name: string): Promise<Project> {
     method: 'POST',
     body: JSON.stringify({ name })
   }).then((r) => r.project)
+}
+
+export function reorderProjects(teamId: string, orderedIds: string[]): Promise<void> {
+  return request(`/teams/${teamId}/projects/reorder`, {
+    method: 'POST',
+    body: JSON.stringify({ orderedIds })
+  })
 }
 
 export function listProjectDocuments(projectId: string): Promise<ProjectDocument[]> {
