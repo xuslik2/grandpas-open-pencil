@@ -15,7 +15,14 @@ const { preparation } = defineProps<{
   preparation: EditorPreparation
 }>()
 
+// preparation.startedAt comes from performance.now(), so elapsed has to
+// be measured on that same clock — Date.now() would be a different epoch
+// entirely and produce nonsense.
 const now = useNow({ interval: 500 })
+const elapsedMs = computed(() => {
+  void now.value // re-evaluate on tick
+  return performance.now() - preparation.startedAt
+})
 
 const label = computed(() => preparationLabel(preparation))
 const step = computed(() => preparationStep(preparation))
@@ -25,10 +32,10 @@ const step = computed(() => preparationStep(preparation))
 const detailedPercent = computed(() => preparationPercent(preparation.progress))
 const progressValue = computed(() => detailedPercent.value ?? step.value?.percent ?? null)
 const progressSteps = computed(() => Math.round(progressValue.value ?? 0))
-const elapsed = computed(() => formatElapsed(now.value.getTime() - preparation.startedAt))
+const elapsed = computed(() => formatElapsed(elapsedMs.value))
 // Large documents can sit in one phase for a while; say so rather than
 // letting a still-looking screen read as a hang.
-const slow = computed(() => now.value.getTime() - preparation.startedAt > 10_000)
+const slow = computed(() => elapsedMs.value > 10_000)
 </script>
 
 <template>
