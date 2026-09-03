@@ -113,9 +113,12 @@ function handleRequest(request: FigSessionRequest): void {
 }
 
 // TEMPORARY diagnostic logging for tracking down a large-file crash.
-// Remove once resolved.
+// Relayed to the main thread, which persists it to localStorage — a
+// renderer crash wipes the console buffer, and workers have no storage
+// of their own. Remove once resolved.
 function figdiag(step: string, extra?: Record<string, unknown>): void {
   console.log(`[figdiag:worker] ${step}`, extra ? JSON.stringify(extra) : '')
+  port?.postMessage({ type: 'figdiag', step, extra })
 }
 
 self.onmessage = (event: MessageEvent<FigSessionOpenRequest>) => {

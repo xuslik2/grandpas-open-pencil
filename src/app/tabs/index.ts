@@ -261,13 +261,24 @@ async function readFigForTab(file: File, signal?: AbortSignal): Promise<SceneGra
 }
 
 // TEMPORARY diagnostic logging for tracking down a large-file crash.
-// Remove once resolved.
+// Persists to localStorage because a renderer crash wipes the console
+// buffer, losing exactly the entries that matter. Remove once resolved.
 function figdiag(step: string, extra?: Record<string, unknown>): void {
   const mem = (performance as { memory?: { usedJSHeapSize: number } }).memory
-  console.log(
-    `[figdiag:tabs] ${step}`,
-    JSON.stringify({ ...extra, heapMB: mem ? +(mem.usedJSHeapSize / 1e6).toFixed(1) : null })
-  )
+  const entry = {
+    t: Date.now(),
+    step: `tabs:${step}`,
+    ...extra,
+    heapMB: mem ? +(mem.usedJSHeapSize / 1e6).toFixed(1) : null
+  }
+  console.log('[figdiag]', JSON.stringify(entry))
+  try {
+    const prior = JSON.parse(localStorage.getItem('figdiag') ?? '[]')
+    prior.push(entry)
+    localStorage.setItem('figdiag', JSON.stringify(prior))
+  } catch {
+    // storage unavailable/full — console line above is still there
+  }
 }
 
 async function showImportedGraph(
