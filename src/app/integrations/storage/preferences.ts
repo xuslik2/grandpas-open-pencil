@@ -16,6 +16,23 @@ export const activeStorageProviderID = useLocalStorage<StorageProviderID>(
 
 const storedPreferences = useLocalStorage<StoragePreferences>('open-pencil:storage:preferences', {})
 
+// Self-heal browsers that cached a provider selection from before this
+// deployment defaulted to hosted-server (anyone who visited during
+// earlier testing/dev). The `useLocalStorage` default above only applies
+// the first time a key is ever written — it doesn't touch a value
+// that's already there. If whatever's currently selected was never
+// actually configured (true of 's3-compatible' here, since this
+// deployment never sets up S3), and hosted-server is registered, switch
+// to it. A real, working S3 setup would pass storagePreferencesComplete
+// and stay untouched.
+if (
+  activeStorageProviderID.value !== 'hosted-server' &&
+  storageProviderRegistry.list().some((provider) => provider.id === 'hosted-server') &&
+  !storagePreferencesComplete(activeStorageProviderID.value)
+) {
+  activeStorageProviderID.value = 'hosted-server'
+}
+
 export function readStoragePreferences(
   providerID: StorageProviderID
 ): Readonly<Record<StorageFieldID, string>> {
