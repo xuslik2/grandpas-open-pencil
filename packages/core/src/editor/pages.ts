@@ -40,26 +40,6 @@ function throwIfAborted(signal?: AbortSignal): void {
   signal?.throwIfAborted()
 }
 
-// TEMPORARY diagnostic logging for tracking down a large-file crash.
-// Remove once resolved.
-function figdiagPages(step: string, extra?: Record<string, unknown>): void {
-  const mem = (performance as { memory?: { usedJSHeapSize: number } }).memory
-  const entry = {
-    t: Date.now(),
-    step: `pages:${step}`,
-    ...extra,
-    heapMB: mem ? +(mem.usedJSHeapSize / 1e6).toFixed(1) : null
-  }
-  console.log('[figdiag]', JSON.stringify(entry))
-  try {
-    const prior = JSON.parse(localStorage.getItem('figdiag') ?? '[]')
-    prior.push(entry)
-    localStorage.setItem('figdiag', JSON.stringify(prior))
-  } catch {
-    // storage unavailable — console line above still applies
-  }
-}
-
 const MAX_CONCURRENT_FONT_LOADS = 4
 export function createPageActions(ctx: EditorContext) {
   const pageViewportStore = createPageViewportStore(ctx)
@@ -172,9 +152,7 @@ export function createPageActions(ctx: EditorContext) {
     const populated = await populatePage(pageId, generation, options.signal)
     if (populated === null || generation !== pageSwitchGeneration) return null
 
-    figdiagPages('populatePage:done')
     await resolvePageFonts(pageId, page.name, options)
-    figdiagPages('resolvePageFonts:done')
     throwIfAborted(options.signal)
     if (generation !== pageSwitchGeneration) return null
 
@@ -185,10 +163,11 @@ export function createPageActions(ctx: EditorContext) {
     // needs to fetch whichever of its images weren't part of that initial
     // set. A no-op (network round trip skipped entirely) once already
     // fetched, since ensureImagesLoaded only asks for what's missing.
-    const pageImageHashes = collectImageHashes(ctx.graph, new Set([pageId]))
-    figdiagPages('collectImageHashes:done', { count: pageImageHashes.size })
-    await ensureImagesLoaded(ctx.graph, ctx.graph.images, pageImageHashes)
-    figdiagPages('ensureImagesLoaded:done')
+    await ensureImagesLoaded(
+      ctx.graph,
+      ctx.graph.images,
+      collectImageHashes(ctx.graph, new Set([pageId]))
+    )
     throwIfAborted(options.signal)
     if (generation !== pageSwitchGeneration) return null
 

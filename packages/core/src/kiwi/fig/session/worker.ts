@@ -108,45 +108,27 @@ function handleRequest(request: FigSessionRequest): void {
   }
 }
 
-// TEMPORARY diagnostic logging for tracking down a large-file crash.
-// Relayed to the main thread, which persists it to localStorage — a
-// renderer crash wipes the console buffer, and workers have no storage
-// of their own. Remove once resolved.
-function figdiag(step: string, extra?: Record<string, unknown>): void {
-  console.log(`[figdiag:worker] ${step}`, extra ? JSON.stringify(extra) : '')
-  port?.postMessage({ type: 'figdiag', step, extra })
-}
-
 self.onmessage = (event: MessageEvent<FigSessionOpenRequest>) => {
   const request = event.data
   port = request.port
   port.onmessage = (message: MessageEvent<FigSessionRequest>) => handleRequest(message.data)
   port.start()
-  figdiag('open:received', { bytes: request.buffer.byteLength, populate: request.options?.populate })
   // A view over the transferred buffer, not a copy — parseFigBuffer below
   // only reads from it, so it's safe for both to reference the same bytes.
   originalArchive = new Uint8Array(request.buffer)
   const isFirstPageOpen = request.options?.populate === 'first-page'
   try {
-    figdiag('parseFigBuffer:start')
     const { nodeChanges, blobs, images, figKiwiVersion, figSchemaDeflated } = parseFigBuffer(
       request.buffer,
       (pages) => respond({ type: 'page-manifest', pages }),
       { limitToFirstPage: isFirstPageOpen }
     )
-    figdiag('parseFigBuffer:done', {
-      nodeChanges: nodeChanges.length,
-      images: images.length,
-      imageBytes: images.reduce((sum, [, d]) => sum + d.byteLength, 0)
-    })
     const parsedGraph = importNodeChanges(nodeChanges, blobs, new Map(images), request.options)
-    figdiag('importNodeChanges:done', { nodes: parsedGraph.nodes.size })
     parsedGraph.figKiwiVersion = figKiwiVersion
     parsedGraph.figSchemaDeflated = figSchemaDeflated
     graph = isFirstPageOpen ? parsedGraph : undefined
 
     const serialized = serializeSceneGraph(parsedGraph)
-    figdiag('serializeSceneGraph:done', { images: serialized.images.length })
     // For a lazily-populated open, archive.ts's parseFigBuffer (above)
     // already decompressed only the first page's (+ its component
     // pages') images — so graph.images only has that subset to begin
@@ -164,11 +146,8 @@ self.onmessage = (event: MessageEvent<FigSessionOpenRequest>) => {
         serialized.images = serialized.images.filter(([hash]) => initialHashes.has(hash))
       }
     }
-    figdiag('respond:graph:start')
     respond({ type: 'graph', graph: serialized })
-    figdiag('respond:graph:done')
   } catch (error) {
-    figdiag('open:error', { message: error instanceof Error ? error.message : String(error) })
     respond({ type: 'graph', error: error instanceof Error ? error.message : String(error) })
   }
 }
