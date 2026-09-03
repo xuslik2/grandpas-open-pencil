@@ -15,11 +15,6 @@ import type {
 let graph: SceneGraph | undefined
 let originalArchive: Uint8Array | undefined
 let port: MessagePort | undefined
-// Which image hashes the main thread already has — the initial 'graph'
-// response only includes images for the pages populated up front (see
-// below), so later 'images' requests (page switch, export) only need to
-// ship whatever hasn't crossed the port yet.
-let sentImageHashes = new Set<string>()
 
 function respond(message: FigSessionResponse): void {
   port?.postMessage(message)
@@ -55,11 +50,16 @@ function handleRequest(request: FigSessionRequest): void {
       return
     }
     if (request.type === 'images') {
+      // Every requested hash is served: the main thread only ever asks
+      // for images it doesn't already have (see ensureImagesLoaded), so
+      // there's nothing to skip. Requests arrive in small batches, which
+      // is what keeps this bounded — decompressing and shipping a whole
+      // media-heavy page's images at once is a big enough sudden
+      // allocation to take the renderer down.
       const images: Array<[string, Uint8Array]> = []
       const transfer: Transferable[] = []
       const missing: string[] = []
       for (const hash of request.hashes) {
-        if (sentImageHashes.has(hash)) continue
         const data = graph?.images.get(hash)
         if (!data) {
           missing.push(hash)
@@ -71,21 +71,18 @@ function handleRequest(request: FigSessionRequest): void {
         const copy = data.slice()
         images.push([hash, copy])
         transfer.push(copy.buffer)
-        sentImageHashes.add(hash)
       }
       // parseFigBuffer's limitToFirstPage means graph.images may not
-      // have every hash — the rest were never decompressed from the
-      // zip, not just never sent. Decompress those specific entries now
-      // from the still-retained original archive bytes, and cache the
-      // result onto graph.images so this doesn't repeat if asked again
-      // (e.g. a later export needing the same image).
+      // have every hash — the rest were never decompressed from the zip,
+      // not just never sent. Decompress those specific entries now from
+      // the still-retained (compressed) original archive bytes. These are
+      // transferred rather than also cached: a second copy here doubles
+      // the spike for exactly the documents this path exists to make
+      // survivable, and anything asked for again can be re-extracted.
       if (missing.length > 0 && originalArchive) {
         for (const [hash, data] of extractFigImages(originalArchive.buffer, missing)) {
-          graph?.images.set(hash, data)
-          const copy = data.slice()
-          images.push([hash, copy])
-          transfer.push(copy.buffer)
-          sentImageHashes.add(hash)
+          images.push([hash, data])
+          transfer.push(data.buffer)
         }
       }
       port?.postMessage({ type: 'images-result', requestId: request.requestId, images }, transfer)
@@ -94,7 +91,6 @@ function handleRequest(request: FigSessionRequest): void {
     if (request.type === 'dispose') {
       graph = undefined
       originalArchive = undefined
-      sentImageHashes = new Set()
       respond({ type: 'disposed' })
       port?.close()
       port = undefined
@@ -168,7 +164,6 @@ self.onmessage = (event: MessageEvent<FigSessionOpenRequest>) => {
         serialized.images = serialized.images.filter(([hash]) => initialHashes.has(hash))
       }
     }
-    for (const [hash] of serialized.images) sentImageHashes.add(hash)
     figdiag('respond:graph:start')
     respond({ type: 'graph', graph: serialized })
     figdiag('respond:graph:done')

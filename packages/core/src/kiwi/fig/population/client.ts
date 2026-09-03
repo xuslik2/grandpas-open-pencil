@@ -135,6 +135,15 @@ export async function requestMissingImages(
  * `targetImages`' owner, except during export, where `targetImages`
  * belongs to a throwaway clone but the fetcher lives on the original.
  */
+// Images are fetched a few at a time rather than all at once. A single
+// page of a media-heavy document can reference well over a hundred
+// images totalling hundreds of megabytes; asking for them in one request
+// made the worker decompress and copy that whole set simultaneously,
+// which is a large enough sudden allocation to take down the renderer
+// (confirmed: it crashed mid-switchPage on a 163MB file). Bounded
+// batches keep peak memory to roughly one batch at a time.
+const IMAGE_FETCH_BATCH_SIZE = 8
+
 export async function ensureImagesLoaded(
   requestGraph: SceneGraph,
   targetImages: Map<string, Uint8Array>,
@@ -142,8 +151,11 @@ export async function ensureImagesLoaded(
 ): Promise<void> {
   const missing = [...hashes].filter((hash) => !targetImages.has(hash))
   if (missing.length === 0) return
-  const fetched = await requestMissingImages(requestGraph, missing)
-  for (const [hash, data] of fetched) targetImages.set(hash, data)
+  for (let index = 0; index < missing.length; index += IMAGE_FETCH_BATCH_SIZE) {
+    const batch = missing.slice(index, index + IMAGE_FETCH_BATCH_SIZE)
+    const fetched = await requestMissingImages(requestGraph, batch)
+    for (const [hash, data] of fetched) targetImages.set(hash, data)
+  }
 }
 
 export function releaseFigPopulationWorker(graph: SceneGraph): void {
