@@ -29,7 +29,9 @@ export const HOSTED_STORAGE_PROVIDER = defineStorageProvider({
   createAdapter: createHostedStorageAdapter
 })
 
-export const storageProviderRegistry = new StorageProviderRegistry([
-  HOSTED_STORAGE_PROVIDER,
-  S3_STORAGE_PROVIDER
-])
+// S3 deliberately isn't registered here — this deployment's storage is
+// hosted-server, full stop. S3_STORAGE_PROVIDER stays exported above
+// (upstream code) but registering it would make it choosable from
+// Settings, which is exactly what shouldn't be possible on this
+// deployment.
+export const storageProviderRegistry = new StorageProviderRegistry([HOSTED_STORAGE_PROVIDER])

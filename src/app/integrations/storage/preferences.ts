@@ -18,17 +18,17 @@ const storedPreferences = useLocalStorage<StoragePreferences>('open-pencil:stora
 
 // Self-heal browsers that cached a provider selection from before this
 // deployment defaulted to hosted-server (anyone who visited during
-// earlier testing/dev). The `useLocalStorage` default above only applies
-// the first time a key is ever written — it doesn't touch a value
-// that's already there. If whatever's currently selected was never
-// actually configured (true of 's3-compatible' here, since this
-// deployment never sets up S3), and hosted-server is registered, switch
-// to it. A real, working S3 setup would pass storagePreferencesComplete
-// and stay untouched.
+// earlier testing/dev, or before S3 was removed from the registry
+// below). The `useLocalStorage` default above only applies the first
+// time a key is ever written — it doesn't touch a value that's already
+// there. If whatever's currently selected isn't even a registered
+// provider (true of 's3-compatible' now — this deployment doesn't
+// register it), switch to hosted-server. Deliberately checked by
+// registration rather than calling storagePreferencesComplete directly:
+// that throws for an unregistered id, which 's3-compatible' now always is.
 if (
   activeStorageProviderID.value !== 'hosted-server' &&
-  storageProviderRegistry.list().some((provider) => provider.id === 'hosted-server') &&
-  !storagePreferencesComplete(activeStorageProviderID.value)
+  !storageProviderRegistry.list().some((provider) => provider.id === activeStorageProviderID.value)
 ) {
   activeStorageProviderID.value = 'hosted-server'
 }

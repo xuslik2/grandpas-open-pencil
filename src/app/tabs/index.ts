@@ -96,23 +96,34 @@ export function getTabsSnapshot(): Tab[] {
   return [...tabsRef.value]
 }
 
+// Hosted deployments (web only): a fresh blank document should autosave
+// to the team's storage from the moment it exists, not stay local-only
+// until an explicit "Save to..." action. Desktop (Tauri) builds keep the
+// upstream default — plain local-only creation. The document row on the
+// server itself is created lazily on first save (see
+// integrations/storage/hosted/adapter.ts's ensureDocumentExists), not
+// here — this just makes sure the write path has somewhere to send it.
+// Called from every path that turns a store into a real, editable
+// document for the first time — createTab, and leaveHome (the "+ New
+// design" button from the dashboard reuses the home tab's already-
+// existing store rather than creating a new one via createTab, so it
+// needs this too; found by testing that flow specifically, not by
+// reading createTab in isolation).
+function bindNewDocumentToHostedStorage(store: EditorStore): void {
+  if (store.getStorageBinding()) return // already bound — don't clobber
+  if (IS_TAURI) return
+  if (!storagePreferencesComplete(activeStorageProviderID.value)) return
+  store.setStorageDocumentSource(
+    { providerId: activeStorageProviderID.value, documentId: crypto.randomUUID() },
+    'Untitled'
+  )
+}
+
 export function createTab(store?: EditorStore, initialGraph?: SceneGraph): Tab {
   const isBrandNew = !store
   const s = store ?? createEditorStore(initialGraph)
 
-  // Hosted deployments (web only): a fresh blank document should autosave
-  // to the team's storage from the moment it exists, not stay local-only
-  // until an explicit "Save to..." action. Desktop (Tauri) builds keep the
-  // upstream default — plain local-only creation. The document row on the
-  // server itself is created lazily on first save (see
-  // integrations/storage/hosted/adapter.ts's ensureDocumentExists), not
-  // here — this just makes sure the write path has somewhere to send it.
-  if (isBrandNew && !IS_TAURI && storagePreferencesComplete(activeStorageProviderID.value)) {
-    s.setStorageDocumentSource(
-      { providerId: activeStorageProviderID.value, documentId: crypto.randomUUID() },
-      'Untitled'
-    )
-  }
+  if (isBrandNew) bindNewDocumentToHostedStorage(s)
 
   const tab: Tab = { id: generateTabId(), store: s, kind: 'document' }
   tabsRef.value = [...tabsRef.value, tab]
@@ -144,6 +155,7 @@ export function leaveHome(tabId: string): void {
   if (tabIndex === -1) return
   const tab = tabsRef.value[tabIndex]
   if (tab.kind !== 'home') return
+  bindNewDocumentToHostedStorage(tab.store)
   tabsRef.value = tabsRef.value.with(tabIndex, { ...tab, kind: 'document' })
 }
 
