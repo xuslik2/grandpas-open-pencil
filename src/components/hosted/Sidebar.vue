@@ -30,6 +30,8 @@ import TeamMembersDialog from '@/components/hosted/TeamMembersDialog.vue'
 
 const creating = ref(false)
 const newProjectName = ref('')
+const creatingTeam = ref(false)
+const newTeamName = ref('')
 const openError = ref<string | null>(null)
 const membersDialogOpen = ref(false)
 const menuCls = useMenuUI({ content: 'min-w-48' })
@@ -51,11 +53,17 @@ async function pickTeam(team: (typeof teams.value)[number]) {
   await switchTeam(team)
 }
 
-async function newTeam() {
-  const name = window.prompt("New team's name?")?.trim()
-  if (!name) return
+function startNewTeam() {
   selectedProject.value = null
+  creatingTeam.value = true
+}
+
+async function submitNewTeam() {
+  const name = newTeamName.value.trim()
+  if (!name) return
   await createTeam(name)
+  newTeamName.value = ''
+  creatingTeam.value = false
 }
 
 async function openFavorite(doc: ProjectDocument) {
@@ -129,7 +137,7 @@ const hasFavorites = computed(() => favorites.value.length > 0)
               <icon-lucide-check v-if="currentTeam?.id === team.id" class="size-3 text-accent" />
             </DropdownMenuItem>
             <DropdownMenuSeparator class="my-1 h-px bg-border" />
-            <DropdownMenuItem :class="menuCls.item" @select="newTeam">
+            <DropdownMenuItem :class="menuCls.item" @select="startNewTeam">
               <icon-lucide-plus class="size-3.5" />
               <span>New team</span>
             </DropdownMenuItem>
@@ -145,6 +153,18 @@ const hasFavorites = computed(() => favorites.value.length > 0)
         <icon-lucide-users class="size-3.5" />
       </button>
     </div>
+
+    <form v-if="creatingTeam" class="px-1" @submit.prevent="submitNewTeam">
+      <input
+        v-model="newTeamName"
+        type="text"
+        autofocus
+        placeholder="Team name"
+        class="w-full rounded border border-border bg-input px-2 py-1 text-xs"
+        @keydown.escape="creatingTeam = false"
+        @blur="creatingTeam = false"
+      />
+    </form>
 
     <p v-if="openError" class="px-1 text-xs text-danger" role="alert">{{ openError }}</p>
 
