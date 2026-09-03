@@ -1,4 +1,4 @@
-import { parseFigBuffer } from '@open-pencil/fig'
+import { extractFigImages, parseFigBuffer } from '@open-pencil/fig'
 import type { SceneGraph } from '@open-pencil/scene-graph'
 
 import { collectImageHashes } from '#core/kiwi/fig/image-refs'
@@ -57,10 +57,14 @@ function handleRequest(request: FigSessionRequest): void {
     if (request.type === 'images') {
       const images: Array<[string, Uint8Array]> = []
       const transfer: Transferable[] = []
+      const missing: string[] = []
       for (const hash of request.hashes) {
         if (sentImageHashes.has(hash)) continue
         const data = graph?.images.get(hash)
-        if (!data) continue
+        if (!data) {
+          missing.push(hash)
+          continue
+        }
         // Copy, not the retained bytes themselves — transferring those
         // would neuter graph.images here, breaking any later population
         // or export that still needs them from this same worker.
@@ -68,6 +72,21 @@ function handleRequest(request: FigSessionRequest): void {
         images.push([hash, copy])
         transfer.push(copy.buffer)
         sentImageHashes.add(hash)
+      }
+      // parseFigBuffer's limitToFirstPage means graph.images may not
+      // have every hash — the rest were never decompressed from the
+      // zip, not just never sent. Decompress those specific entries now
+      // from the still-retained original archive bytes, and cache the
+      // result onto graph.images so this doesn't repeat if asked again
+      // (e.g. a later export needing the same image).
+      if (missing.length > 0 && originalArchive) {
+        for (const [hash, data] of extractFigImages(originalArchive.buffer, missing)) {
+          graph?.images.set(hash, data)
+          const copy = data.slice()
+          images.push([hash, copy])
+          transfer.push(copy.buffer)
+          sentImageHashes.add(hash)
+        }
       }
       port?.postMessage({ type: 'images-result', requestId: request.requestId, images }, transfer)
       return
@@ -101,23 +120,29 @@ self.onmessage = (event: MessageEvent<FigSessionOpenRequest>) => {
   // A view over the transferred buffer, not a copy — parseFigBuffer below
   // only reads from it, so it's safe for both to reference the same bytes.
   originalArchive = new Uint8Array(request.buffer)
+  const isFirstPageOpen = request.options?.populate === 'first-page'
   try {
     const { nodeChanges, blobs, images, figKiwiVersion, figSchemaDeflated } = parseFigBuffer(
       request.buffer,
-      (pages) => respond({ type: 'page-manifest', pages })
+      (pages) => respond({ type: 'page-manifest', pages }),
+      { limitToFirstPage: isFirstPageOpen }
     )
     const parsedGraph = importNodeChanges(nodeChanges, blobs, new Map(images), request.options)
     parsedGraph.figKiwiVersion = figKiwiVersion
     parsedGraph.figSchemaDeflated = figSchemaDeflated
-    graph = request.options?.populate === 'first-page' ? parsedGraph : undefined
+    graph = isFirstPageOpen ? parsedGraph : undefined
 
     const serialized = serializeSceneGraph(parsedGraph)
-    // For a lazily-populated open, only ship images the initially
-    // populated pages (first page + any component pages they depend on)
-    // actually reference — not every image in the file. graph.images
-    // itself keeps everything (still needed here for later 'images'
-    // requests as more pages get visited); this only trims what
-    // structured-clones across the port on this first response.
+    // For a lazily-populated open, archive.ts's parseFigBuffer (above)
+    // already decompressed only the first page's (+ its component
+    // pages') images — so graph.images only has that subset to begin
+    // with. This filter is a defensive backstop matching that same page
+    // set via the SceneGraph instead, in case any node ended up
+    // referencing an image hash that wasn't actually decompressed (e.g.
+    // a malformed file) — serializeSceneGraph would otherwise happily
+    // clone an `images` array whose count might not match what's really
+    // needed. Later 'images' requests only make sense for hashes this
+    // graph actually retains; see the 'images' handler below.
     if (graph) {
       const activeRootIds = getLazyFigImportContext(graph)?.populatedRootIds
       if (activeRootIds) {

@@ -5,6 +5,7 @@ import type { NodeChange } from '@open-pencil/kiwi/fig/codec'
 import { buildFigKiwi, parseFigKiwiChunks } from '@open-pencil/kiwi/fig/container'
 import { decodeFigKiwiCanvas } from '@open-pencil/kiwi/fig/parse'
 
+import { firstPageImageHashes } from './node-change/image-refs'
 import { hasPNGSignature } from './thumbnail'
 
 export interface FigImageEntry {
@@ -53,6 +54,19 @@ function isCanonicalCanvasEntry(name: string): boolean {
   return name === 'canvas.fig' || name === 'canvas'
 }
 
+// When `neededHashes` is given, image entries outside that set are
+// skipped by fflate's unzipSync entirely — never inflated, not just
+// dropped afterward — so a large file's non-first-page images never
+// cost memory to open in the first place. Anything not an `images/*`
+// entry (meta.json, thumbnail.png) is always kept.
+function unzipEntryFilter(neededHashes: Set<string> | null) {
+  return ({ name }: { name: string }) => {
+    if (isCanonicalCanvasEntry(name)) return false
+    if (!neededHashes || !name.startsWith('images/')) return true
+    return neededHashes.has(name.slice('images/'.length))
+  }
+}
+
 function parseRawFigKiwi(
   bytes: Uint8Array,
   onPages?: (pages: FigPageManifestEntry[]) => void
@@ -65,10 +79,22 @@ function parseRawFigKiwi(
   return { ...decoded, images: [], thumbnailPNG, metaJSON: null }
 }
 
+export interface ParseFigBufferOptions {
+  /**
+   * Only decompress images referenced by the first page, instead of
+   * every image in the file. The caller must be able to fetch the rest
+   * later (see population/client.ts's registerImagesRequest in
+   * packages/core) — a document opened this way will show missing
+   * images on any other page until something requests them.
+   */
+  limitToFirstPage?: boolean
+}
+
 /** Parse a complete zipped or legacy raw `.fig` file into its protocol payload and resources. */
 export function parseFigBuffer(
   buffer: ArrayBuffer,
-  onPages?: (pages: FigPageManifestEntry[]) => void
+  onPages?: (pages: FigPageManifestEntry[]) => void,
+  options?: ParseFigBufferOptions
 ): FigParseResult {
   const bytes = new Uint8Array(buffer)
   const raw = parseRawFigKiwi(bytes, onPages)
@@ -80,7 +106,10 @@ export function parseFigBuffer(
   let decoded: ReturnType<typeof decodeFigKiwiCanvas>
   if (canvasData) {
     decoded = decodeFigKiwiCanvas(canvasData, onPages)
-    archive = unzipSync(bytes, { filter: ({ name }) => !isCanonicalCanvasEntry(name) })
+    const neededHashes = options?.limitToFirstPage
+      ? firstPageImageHashes(decoded.nodeChanges)
+      : null
+    archive = unzipSync(bytes, { filter: unzipEntryFilter(neededHashes) })
   } else {
     archive = unzipSync(bytes)
     canvasData = findCanvasData(archive)
@@ -103,6 +132,28 @@ export function parseFigBuffer(
     thumbnailPNG: archive['thumbnail.png'] ?? null,
     metaJSON: Object.hasOwn(archive, 'meta.json') ? new TextDecoder().decode(metaBytes) : null
   }
+}
+
+/**
+ * Decompresses just the given image hashes out of a `.fig` archive's raw
+ * (still-zipped) bytes — the counterpart to parseFigBuffer's
+ * `limitToFirstPage`. Whoever retains the original archive bytes after
+ * an initial limited parse (see session/worker.ts) can use this to
+ * decompress additional images on demand, as they're actually needed,
+ * rather than having decompressed nothing-in-particular being a
+ * permanent gap.
+ */
+export function extractFigImages(
+  buffer: ArrayBuffer,
+  hashes: Iterable<string>
+): Array<[string, Uint8Array]> {
+  const wanted = new Set(hashes)
+  if (wanted.size === 0) return []
+  const bytes = new Uint8Array(buffer)
+  const decompressed = unzipSync(bytes, {
+    filter: ({ name }) => name.startsWith('images/') && wanted.has(name.slice('images/'.length))
+  })
+  return Object.entries(decompressed).map(([name, data]) => [name.slice('images/'.length), data])
 }
 
 /** Assemble a complete zipped `.fig` archive from an encoded Kiwi message and resources. */

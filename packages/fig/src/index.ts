@@ -1,9 +1,11 @@
 export {
   compressFigDataSync,
+  extractFigImages,
   parseFigBuffer,
   writeFigArchive,
   type FigImageEntry,
   type FigParseResult,
+  type ParseFigBufferOptions,
   type WriteFigArchiveInput
 } from './archive'
 export {

@@ -57,7 +57,7 @@ function convertColor(color?: Partial<Color>): Color {
   return { r: color.r ?? 0, g: color.g ?? 0, b: color.b ?? 0, a: color.a ?? 1 }
 }
 
-function imageHashToString(hash: Record<string, number>): string {
+export function imageHashToString(hash: Record<string, number>): string {
   const bytes = Object.keys(hash)
     .sort((a, b) => Number(a) - Number(b))
     .map((k) => hash[Number(k)])
