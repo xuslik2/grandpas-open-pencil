@@ -154,16 +154,23 @@ const hasFavorites = computed(() => favorites.value.length > 0)
       </button>
     </div>
 
-    <form v-if="creatingTeam" class="px-1" @submit.prevent="submitNewTeam">
+    <form v-if="creatingTeam" class="flex items-center gap-1 px-1" @submit.prevent="submitNewTeam">
       <input
         v-model="newTeamName"
         type="text"
         autofocus
         placeholder="Team name"
-        class="w-full rounded border border-border bg-input px-2 py-1 text-xs"
+        class="w-full min-w-0 flex-1 rounded border border-border bg-input px-2 py-1 text-xs"
         @keydown.escape="creatingTeam = false"
-        @blur="creatingTeam = false"
       />
+      <button
+        type="submit"
+        class="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-hover hover:text-surface disabled:pointer-events-none disabled:opacity-40"
+        :disabled="!newTeamName.trim()"
+        aria-label="Create team"
+      >
+        <icon-lucide-check class="size-3.5" />
+      </button>
     </form>
 
     <p v-if="openError" class="px-1 text-xs text-danger" role="alert">{{ openError }}</p>
@@ -213,16 +220,27 @@ const hasFavorites = computed(() => favorites.value.length > 0)
         </button>
       </div>
 
-      <form v-if="creating" class="mt-1 px-1" @submit.prevent="submitNewProject">
+      <form
+        v-if="creating"
+        class="mt-1 flex items-center gap-1 px-1"
+        @submit.prevent="submitNewProject"
+      >
         <input
           v-model="newProjectName"
           type="text"
           autofocus
           placeholder="Project name"
-          class="w-full rounded border border-border bg-input px-2 py-1 text-xs"
+          class="w-full min-w-0 flex-1 rounded border border-border bg-input px-2 py-1 text-xs"
           @keydown.escape="creating = false"
-          @blur="creating = false"
         />
+        <button
+          type="submit"
+          class="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-hover hover:text-surface disabled:pointer-events-none disabled:opacity-40"
+          :disabled="!newProjectName.trim()"
+          aria-label="Create project"
+        >
+          <icon-lucide-check class="size-3.5" />
+        </button>
       </form>
 
       <div class="mt-1 flex flex-col">
