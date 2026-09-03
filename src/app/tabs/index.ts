@@ -96,23 +96,29 @@ export function getTabsSnapshot(): Tab[] {
   return [...tabsRef.value]
 }
 
-// Hosted deployments (web only): a fresh blank document should autosave
-// to the team's storage from the moment it exists, not stay local-only
-// until an explicit "Save to..." action. Desktop (Tauri) builds keep the
-// upstream default — plain local-only creation. The document row on the
-// server itself is created lazily on first save (see
-// integrations/storage/hosted/adapter.ts's ensureDocumentExists), not
-// here — this just makes sure the write path has somewhere to send it.
-// Called from every path that turns a store into a real, editable
-// document for the first time — createTab, and leaveHome (the "+ New
-// design" button from the dashboard reuses the home tab's already-
-// existing store rather than creating a new one via createTab, so it
-// needs this too; found by testing that flow specifically, not by
-// reading createTab in isolation).
+// True when this deployment should autosave documents to hosted team
+// storage rather than stay local-only — used both for brand-new blank
+// documents and for local-file imports (see openFileInNewTab below).
+// Desktop (Tauri) builds keep the upstream default of plain local-only
+// files, matching the existing "Save As" / native-file workflow there.
+function isHostedStorageActive(): boolean {
+  return !IS_TAURI && storagePreferencesComplete(activeStorageProviderID.value)
+}
+
+// A fresh blank document should autosave to the team's storage from the
+// moment it exists, not stay local-only until an explicit "Save to..."
+// action. The document row on the server itself is created lazily on
+// first save (see integrations/storage/hosted/adapter.ts's
+// ensureDocumentExists), not here — this just makes sure the write path
+// has somewhere to send it. Called from every path that turns a store
+// into a real, editable document for the first time — createTab, and
+// leaveHome (the "+ New design" button from the dashboard reuses the
+// home tab's already-existing store rather than creating a new one via
+// createTab, so it needs this too; found by testing that flow
+// specifically, not by reading createTab in isolation).
 function bindNewDocumentToHostedStorage(store: EditorStore): void {
   if (store.getStorageBinding()) return // already bound — don't clobber
-  if (IS_TAURI) return
-  if (!storagePreferencesComplete(activeStorageProviderID.value)) return
+  if (!isHostedStorageActive()) return
   store.setStorageDocumentSource(
     { providerId: activeStorageProviderID.value, documentId: crypto.randomUUID() },
     'Untitled'
@@ -555,8 +561,22 @@ export async function openFileInNewTab(
       store,
       imported,
       () => {
-        store.setDocumentSource(file.name, sourceFormat, handle, path)
-        if (isFig && path) watchOpenedFigCover(path, store)
+        if (isHostedStorageActive()) {
+          // Hosted deployments: an imported file becomes a new document
+          // owned by the team, like "+ New design" — not a reference to
+          // the local filesystem. setDocumentSource's setStorageBinding
+          // (null) would otherwise silently strip autosave's only save
+          // target — confirmed by testing: imports never reached the
+          // server, they just lived in the tab until it was closed.
+          const binding = store.getStorageBinding() ?? {
+            providerId: activeStorageProviderID.value,
+            documentId: crypto.randomUUID()
+          }
+          store.setStorageDocumentSource(binding, file.name.replace(/\.[^.]+$/i, ''))
+        } else {
+          store.setDocumentSource(file.name, sourceFormat, handle, path)
+          if (isFig && path) watchOpenedFigCover(path, store)
+        }
       },
       load
     )
