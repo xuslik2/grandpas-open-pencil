@@ -21,6 +21,172 @@ teamRoutes.get('/', async (c) => {
   return c.json({ teams: rows })
 })
 
+function slugify(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || 'team'
+  )
+}
+
+const createTeamSchema = z.object({
+  name: z.string().min(1).max(200),
+})
+
+// Any authenticated user can create a team and becomes its owner — this
+// deployment is invite-only at the account level already (no public
+// signup), so a second gate here would just add friction for no real
+// security benefit.
+teamRoutes.post('/', async (c) => {
+  const parsed = createTeamSchema.safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: 'invalid request' }, 400)
+
+  const user = c.get('user')
+  const base = slugify(parsed.data.name)
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    // Retry with a numeric suffix on slug collision rather than failing
+    // the whole request over a cosmetic uniqueness constraint.
+    let slug = base
+    let team: { id: string; name: string; slug: string } | null = null
+    for (let attempt = 0; attempt < 20 && !team; attempt++) {
+      slug = attempt === 0 ? base : `${base}-${attempt + 1}`
+      const { rows } = await client.query(
+        `insert into teams (name, slug) values ($1, $2)
+         on conflict (slug) do nothing
+         returning id, name, slug`,
+        [parsed.data.name, slug]
+      )
+      team = rows[0] ?? null
+    }
+    if (!team) throw new Error('Could not allocate a unique team slug')
+
+    await client.query(`insert into team_members (team_id, user_id, role) values ($1, $2, 'owner')`, [
+      team.id,
+      user.id,
+    ])
+    await client.query('commit')
+    return c.json({ team: { ...team, role: 'owner' } }, 201)
+  } catch (err) {
+    await client.query('rollback')
+    throw err
+  } finally {
+    client.release()
+  }
+})
+
+// Members of a team, for the management UI. Any member can view the
+// roster; only admins/owners get invite/remove/role-change actions
+// (enforced on those routes below, not here).
+teamRoutes.get('/:teamId/members', requireTeamRole('viewer', teamIdFromParam), async (c) => {
+  const { rows } = await pool.query(
+    `select u.id, u.email, u.display_name, u.avatar_color, m.role
+       from team_members m
+       join users u on u.id = m.user_id
+      where m.team_id = $1
+      order by u.display_name`,
+    [c.req.param('teamId')]
+  )
+  return c.json({ members: rows })
+})
+
+const updateMemberRoleSchema = z.object({
+  role: z.enum(['viewer', 'editor', 'admin', 'owner']),
+})
+
+async function ownerCount(teamId: string): Promise<number> {
+  const { rows } = await pool.query(
+    `select count(*)::int as n from team_members where team_id = $1 and role = 'owner'`,
+    [teamId]
+  )
+  return rows[0].n
+}
+
+// Only owners can change roles (an admin promoting themselves to owner
+// would otherwise be a privilege-escalation hole).
+teamRoutes.patch(
+  '/:teamId/members/:userId',
+  requireTeamRole('owner', teamIdFromParam),
+  async (c) => {
+    const parsed = updateMemberRoleSchema.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) return c.json({ error: 'invalid request' }, 400)
+
+    // Non-null: guaranteed present by the matched route pattern.
+    const teamId = c.req.param('teamId')!
+    const userId = c.req.param('userId')!
+
+    // Don't allow demoting the last owner — that would strand the team
+    // with nobody able to manage it.
+    const { rows: current } = await pool.query(
+      `select role from team_members where team_id = $1 and user_id = $2`,
+      [teamId, userId]
+    )
+    if (!current[0]) return c.json({ error: 'not found' }, 404)
+    if (current[0].role === 'owner' && parsed.data.role !== 'owner' && (await ownerCount(teamId)) <= 1) {
+      return c.json({ error: 'Cannot demote the only owner' }, 400)
+    }
+
+    await pool.query(`update team_members set role = $1 where team_id = $2 and user_id = $3`, [
+      parsed.data.role,
+      teamId,
+      userId,
+    ])
+    return c.json({ ok: true })
+  }
+)
+
+teamRoutes.delete(
+  '/:teamId/members/:userId',
+  requireTeamRole('admin', teamIdFromParam),
+  async (c) => {
+    // Non-null: guaranteed present by the matched route pattern.
+    const teamId = c.req.param('teamId')!
+    const userId = c.req.param('userId')!
+
+    const { rows: current } = await pool.query(
+      `select role from team_members where team_id = $1 and user_id = $2`,
+      [teamId, userId]
+    )
+    if (!current[0]) return c.json({ error: 'not found' }, 404)
+    if (current[0].role === 'owner' && (await ownerCount(teamId)) <= 1) {
+      return c.json({ error: 'Cannot remove the only owner' }, 400)
+    }
+
+    await pool.query(`delete from team_members where team_id = $1 and user_id = $2`, [
+      teamId,
+      userId,
+    ])
+    return c.json({ ok: true })
+  }
+)
+
+// Pending (not yet accepted) invites, for the management UI to show
+// "invited, waiting" alongside actual members.
+teamRoutes.get('/:teamId/invites', requireTeamRole('admin', teamIdFromParam), async (c) => {
+  const { rows } = await pool.query(
+    `select id, email, role, created_at, expires_at
+       from invites
+      where team_id = $1 and accepted_at is null and expires_at > now()
+      order by created_at desc`,
+    [c.req.param('teamId')]
+  )
+  return c.json({ invites: rows })
+})
+
+teamRoutes.delete(
+  '/:teamId/invites/:inviteId',
+  requireTeamRole('admin', teamIdFromParam),
+  async (c) => {
+    await pool.query(`delete from invites where id = $1 and team_id = $2`, [
+      c.req.param('inviteId'),
+      c.req.param('teamId'),
+    ])
+    return c.json({ ok: true })
+  }
+)
+
 const createInviteSchema = z.object({
   email: z.string().email(),
   role: z.enum(['viewer', 'editor', 'admin']),

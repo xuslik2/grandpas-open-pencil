@@ -1,12 +1,14 @@
-// Shared reactive project list so the sidebar (compact, draggable) and the
-// main-area grid (cards with thumbnails) — both showing "the team's
-// projects" — stay in sync without each fetching and holding its own
-// separate copy. Creating a project or dragging to reorder in one updates
-// what the other renders immediately.
+// Shared reactive team/project state so the sidebar (compact, draggable),
+// the main-area grid (cards with thumbnails), and the team switcher all
+// stay in sync without each fetching and holding its own separate copy.
+// Creating a project, switching teams, or dragging to reorder in one
+// place updates what everything else renders immediately.
 
+import { useLocalStorage } from '@vueuse/core'
 import { ref } from 'vue'
 import {
   createProject as apiCreateProject,
+  createTeam as apiCreateTeam,
   favoriteDocument as apiFavoriteDocument,
   listFavoriteDocuments,
   listProjects,
@@ -18,20 +20,36 @@ import {
   type Team
 } from './api'
 
+export const teams = ref<Team[]>([])
 export const currentTeam = ref<Team | null>(null)
 export const projects = ref<Project[]>([])
 export const favorites = ref<ProjectDocument[]>([])
+
+// Remembers which team you were last looking at, per browser — a fresh
+// visit still defaults to the first team if this is empty or stale.
+const lastTeamId = useLocalStorage<string>('open-pencil:hosted:current-team-id', '')
 
 let loaded = false
 
 export async function ensureProjectsLoaded(): Promise<void> {
   if (loaded) return
   loaded = true
-  const teams = await listTeams()
-  currentTeam.value = teams[0] ?? null
-  if (currentTeam.value) {
-    projects.value = await listProjects(currentTeam.value.id)
-  }
+  teams.value = await listTeams()
+  const remembered = teams.value.find((t) => t.id === lastTeamId.value)
+  await switchTeam(remembered ?? teams.value[0] ?? null)
+}
+
+export async function switchTeam(team: Team | null): Promise<void> {
+  currentTeam.value = team
+  lastTeamId.value = team?.id ?? ''
+  projects.value = team ? await listProjects(team.id) : []
+}
+
+export async function createTeam(name: string): Promise<Team> {
+  const team = await apiCreateTeam(name)
+  teams.value = [...teams.value, team]
+  await switchTeam(team)
+  return team
 }
 
 let favoritesLoaded = false

@@ -16,7 +16,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export type Team = { id: string; name: string; slug: string; role: string }
+export type TeamRole = 'viewer' | 'editor' | 'admin' | 'owner'
+export type Team = { id: string; name: string; slug: string; role: TeamRole }
+
+export type Member = {
+  id: string
+  email: string
+  display_name: string
+  avatar_color: string
+  role: TeamRole
+}
+
+export type PendingInvite = {
+  id: string
+  email: string
+  role: TeamRole
+  created_at: string
+  expires_at: string
+}
 
 export type Project = {
   id: string
@@ -38,6 +55,47 @@ export type ProjectDocument = {
 
 export function listTeams(): Promise<Team[]> {
   return request<{ teams: Team[] }>('/teams').then((r) => r.teams)
+}
+
+export function createTeam(name: string): Promise<Team> {
+  return request<{ team: Team }>('/teams', {
+    method: 'POST',
+    body: JSON.stringify({ name })
+  }).then((r) => r.team)
+}
+
+export function listMembers(teamId: string): Promise<Member[]> {
+  return request<{ members: Member[] }>(`/teams/${teamId}/members`).then((r) => r.members)
+}
+
+export function updateMemberRole(teamId: string, userId: string, role: TeamRole): Promise<void> {
+  return request(`/teams/${teamId}/members/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role })
+  })
+}
+
+export function removeMember(teamId: string, userId: string): Promise<void> {
+  return request(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' })
+}
+
+export function listPendingInvites(teamId: string): Promise<PendingInvite[]> {
+  return request<{ invites: PendingInvite[] }>(`/teams/${teamId}/invites`).then((r) => r.invites)
+}
+
+export function createInvite(
+  teamId: string,
+  email: string,
+  role: TeamRole
+): Promise<{ inviteUrl: string }> {
+  return request(`/teams/${teamId}/invites`, {
+    method: 'POST',
+    body: JSON.stringify({ email, role })
+  })
+}
+
+export function revokeInvite(teamId: string, inviteId: string): Promise<void> {
+  return request(`/teams/${teamId}/invites/${inviteId}`, { method: 'DELETE' })
 }
 
 export function listProjects(teamId: string): Promise<Project[]> {

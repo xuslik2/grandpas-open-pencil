@@ -1,23 +1,38 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, type ComponentPublicInstance } from 'vue'
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuPortal,
+  DropdownMenuRoot,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from 'reka-ui'
 import { useFlatReorderDrag } from '@open-pencil/vue'
 import type { Project, ProjectDocument } from '@/app/hosted/hierarchy/api'
 import {
   createProject,
+  createTeam,
   currentTeam,
   ensureFavoritesLoaded,
   ensureProjectsLoaded,
   favorites,
   projects,
   reorderProjectsLocally,
-  setFavorited
+  setFavorited,
+  switchTeam,
+  teams
 } from '@/app/hosted/hierarchy/store'
 import { selectedProject } from '@/app/hosted/navigation/store'
 import { openStorageDocumentInNewTab } from '@/app/tabs'
+import { useMenuUI } from '@/components/ui/menu'
+import TeamMembersDialog from '@/components/hosted/TeamMembersDialog.vue'
 
 const creating = ref(false)
 const newProjectName = ref('')
 const openError = ref<string | null>(null)
+const membersDialogOpen = ref(false)
+const menuCls = useMenuUI({ content: 'min-w-48' })
 
 onMounted(async () => {
   await Promise.all([ensureProjectsLoaded(), ensureFavoritesLoaded()])
@@ -29,6 +44,18 @@ async function submitNewProject() {
   await createProject(name)
   newProjectName.value = ''
   creating.value = false
+}
+
+async function pickTeam(team: (typeof teams.value)[number]) {
+  selectedProject.value = null
+  await switchTeam(team)
+}
+
+async function newTeam() {
+  const name = window.prompt("New team's name?")?.trim()
+  if (!name) return
+  selectedProject.value = null
+  await createTeam(name)
 }
 
 async function openFavorite(doc: ProjectDocument) {
@@ -79,15 +106,49 @@ const hasFavorites = computed(() => favorites.value.length > 0)
   <aside
     class="flex h-full w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-panel-secondary px-3 py-4"
   >
-    <button
-      type="button"
-      class="truncate px-1 text-left text-sm font-semibold hover:text-accent"
-      @click="selectedProject = null"
-    >
-      {{ currentTeam?.name ?? 'Studio' }}
-    </button>
+    <div class="flex items-center gap-1">
+      <DropdownMenuRoot>
+        <DropdownMenuTrigger as-child>
+          <button
+            type="button"
+            class="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-1 text-left text-sm font-semibold hover:bg-hover"
+          >
+            <span class="min-w-0 flex-1 truncate">{{ currentTeam?.name ?? 'Studio' }}</span>
+            <icon-lucide-chevron-down class="size-3.5 shrink-0 text-muted" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuPortal>
+          <DropdownMenuContent side="bottom" align="start" :side-offset="4" :class="menuCls.content">
+            <DropdownMenuItem
+              v-for="team in teams"
+              :key="team.id"
+              :class="menuCls.item"
+              @select="pickTeam(team)"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ team.name }}</span>
+              <icon-lucide-check v-if="currentTeam?.id === team.id" class="size-3 text-accent" />
+            </DropdownMenuItem>
+            <DropdownMenuSeparator class="my-1 h-px bg-border" />
+            <DropdownMenuItem :class="menuCls.item" @select="newTeam">
+              <icon-lucide-plus class="size-3.5" />
+              <span>New team</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenuPortal>
+      </DropdownMenuRoot>
+      <button
+        type="button"
+        class="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-hover hover:text-surface"
+        aria-label="Manage team members"
+        @click="membersDialogOpen = true"
+      >
+        <icon-lucide-users class="size-3.5" />
+      </button>
+    </div>
 
     <p v-if="openError" class="px-1 text-xs text-danger" role="alert">{{ openError }}</p>
+
+    <TeamMembersDialog v-model="membersDialogOpen" />
 
     <section v-if="hasFavorites">
       <h3 class="px-1 text-[11px] font-semibold tracking-wide text-muted uppercase">Favorites</h3>
