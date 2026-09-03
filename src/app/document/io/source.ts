@@ -115,7 +115,11 @@ export function createDocumentSourceActions({
     }
   }
 
-  function setStorageDocumentSource(binding: StorageDocumentBinding, documentName: string) {
+  function setStorageDocumentSource(
+    binding: StorageDocumentBinding,
+    documentName: string,
+    options?: { markSaved?: boolean }
+  ) {
     stopWatchingFile()
     setFileHandle(null)
     setFilePath(null)
@@ -124,8 +128,14 @@ export function createDocumentSourceActions({
     setStorageBinding(binding)
     state.documentName = documentName
     state.autosaveEnabled = true
-    setSavedVersion(state.sceneVersion)
-    void recovery.markProtectedVersion(state.sceneVersion)
+    // Skippable: a brand-new blank document has nothing to save yet, so
+    // stamping the current (baseline) version as "saved" is correct. A
+    // document that already has real content at bind time (an import)
+    // needs that content to actually reach the server — see requestSave.
+    if (options?.markSaved ?? true) {
+      setSavedVersion(state.sceneVersion)
+      void recovery.markProtectedVersion(state.sceneVersion)
+    }
   }
 
   function setPlannedFilePath(path: string) {
@@ -148,12 +158,24 @@ export function createDocumentSourceActions({
     recovery.disposeRecovery()
   }
 
+  // Autosave only fires reactively when sceneVersion changes after the
+  // savedVersion watermark — setStorageDocumentSource stamps that
+  // watermark to "current" as part of binding a fresh blank document
+  // (nothing to save yet, by design). A caller that binds storage to a
+  // document that already has real content (e.g. an imported file) needs
+  // to explicitly ask for that content to be saved, since no further
+  // sceneVersion change will happen on its own to trigger the watcher.
+  function requestSave(): Promise<void> {
+    return autosave.requestSave(state.sceneVersion)
+  }
+
   return {
     setDocumentSource,
     setStorageDocumentSource,
     setPlannedFilePath,
     startWatchingCurrentFile,
     disposeDocumentIO,
+    requestSave,
     saveFigFile,
     saveFigFileAs,
     getStorageBinding,

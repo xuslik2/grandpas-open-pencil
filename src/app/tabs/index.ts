@@ -568,11 +568,23 @@ export async function openFileInNewTab(
           // (null) would otherwise silently strip autosave's only save
           // target — confirmed by testing: imports never reached the
           // server, they just lived in the tab until it was closed.
+          //
+          // markSaved: false + explicit requestSave() matters here and
+          // not for a blank "+ New design": by this point
+          // applyImportedDocument already populated the graph (real
+          // content, sceneVersion > 0), so the normal "just bound, mark
+          // current version as already saved" behavior would silently
+          // treat that imported content as saved without ever writing
+          // it — confirmed by testing: the binding was present but the
+          // document never actually reached the server.
           const binding = store.getStorageBinding() ?? {
             providerId: activeStorageProviderID.value,
             documentId: crypto.randomUUID()
           }
-          store.setStorageDocumentSource(binding, file.name.replace(/\.[^.]+$/i, ''))
+          store.setStorageDocumentSource(binding, file.name.replace(/\.[^.]+$/i, ''), {
+            markSaved: false
+          })
+          void store.requestSave()
         } else {
           store.setDocumentSource(file.name, sourceFormat, handle, path)
           if (isFig && path) watchOpenedFigCover(path, store)
