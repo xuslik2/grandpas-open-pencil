@@ -142,7 +142,7 @@ export async function requestMissingImages(
 // which is a large enough sudden allocation to take down the renderer
 // (confirmed: it crashed mid-switchPage on a 163MB file). Bounded
 // batches keep peak memory to roughly one batch at a time.
-const IMAGE_FETCH_BATCH_SIZE = 8
+const IMAGE_FETCH_BATCH_SIZE = 2
 
 export async function ensureImagesLoaded(
   requestGraph: SceneGraph,
