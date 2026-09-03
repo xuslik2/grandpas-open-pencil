@@ -22,8 +22,10 @@ import { notificationMessages } from '@/app/i18n/notifications'
 import {
   activeStorageProviderID,
   createActiveStorageAdapter,
+  storagePreferencesComplete,
   type StorageDocument
 } from '@/app/integrations/storage'
+import { IS_TAURI } from '@/constants'
 import {
   cacheRecentFileThumbnail,
   loadCachedRecentFileThumbnail,
@@ -93,7 +95,23 @@ export function getTabsSnapshot(): Tab[] {
 }
 
 export function createTab(store?: EditorStore, initialGraph?: SceneGraph): Tab {
+  const isBrandNew = !store
   const s = store ?? createEditorStore(initialGraph)
+
+  // Hosted deployments (web only): a fresh blank document should autosave
+  // to the team's storage from the moment it exists, not stay local-only
+  // until an explicit "Save to..." action. Desktop (Tauri) builds keep the
+  // upstream default — plain local-only creation. The document row on the
+  // server itself is created lazily on first save (see
+  // integrations/storage/hosted/adapter.ts's ensureDocumentExists), not
+  // here — this just makes sure the write path has somewhere to send it.
+  if (isBrandNew && !IS_TAURI && storagePreferencesComplete(activeStorageProviderID.value)) {
+    s.setStorageDocumentSource(
+      { providerId: activeStorageProviderID.value, documentId: crypto.randomUUID() },
+      'Untitled'
+    )
+  }
+
   const tab: Tab = { id: generateTabId(), store: s, kind: 'document' }
   tabsRef.value = [...tabsRef.value, tab]
   activateTab(tab)
