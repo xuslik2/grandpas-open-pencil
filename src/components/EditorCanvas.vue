@@ -23,6 +23,7 @@ import {
 } from '@open-pencil/vue'
 import { useCollabInjected } from '@/app/collab/use'
 import { useEditorStore } from '@/app/editor/active-store'
+import { isPresenting } from '@/app/present/store'
 import { appRuntimeConfig } from '@/app/runtime/config'
 import { useCanvasCollaborationAwareness } from '@/app/editor/canvas/collaboration-awareness'
 import { createCanvasContextSelection } from '@/app/editor/canvas/context-selection'
@@ -84,6 +85,12 @@ const { hitTestSectionTitle, hitTestComponentLabel, hitTestFrameTitle } = useCan
   {
     layer: 'overlays',
     shouldSuspendRender,
+    // A getter, not a plain boolean — shouldShowRulers() re-reads this on
+    // every call, so it stays live for the rest of this options object's
+    // lifetime rather than freezing whatever isPresenting was at setup.
+    get showRulers() {
+      return !isPresenting.value
+    },
     getRenderState,
     onViewportResize
   }
