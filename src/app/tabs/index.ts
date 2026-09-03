@@ -260,6 +260,16 @@ async function readFigForTab(file: File, signal?: AbortSignal): Promise<SceneGra
   return imported
 }
 
+// TEMPORARY diagnostic logging for tracking down a large-file crash.
+// Remove once resolved.
+function figdiag(step: string, extra?: Record<string, unknown>): void {
+  const mem = (performance as { memory?: { usedJSHeapSize: number } }).memory
+  console.log(
+    `[figdiag:tabs] ${step}`,
+    JSON.stringify({ ...extra, heapMB: mem ? +(mem.usedJSHeapSize / 1e6).toFixed(1) : null })
+  )
+}
+
 async function showImportedGraph(
   store: EditorStore,
   graph: SceneGraph,
@@ -267,16 +277,23 @@ async function showImportedGraph(
   load?: DocumentLoadSession
 ): Promise<void> {
   load?.update({ phase: 'materializing', detail: store.state.documentName })
+  figdiag('applyImportedDocument:start', { nodes: graph.nodes.size, images: graph.images.size })
   await applyImportedDocument(store, graph, load)
+  figdiag('applyImportedDocument:done')
   load?.signal.throwIfAborted()
   await prepare?.()
+  figdiag('prepare:done')
   load?.signal.throwIfAborted()
   const pageId = store.graph.getPages()[0]?.id ?? store.graph.rootId
   load?.update({ phase: 'populating-page', detail: store.graph.getNode(pageId)?.name ?? null })
+  figdiag('switchPage:start', { pageId })
   await store.switchPage(pageId, { preparation: load })
+  figdiag('switchPage:done')
   load?.signal.throwIfAborted()
   load?.update({ phase: 'preparing-render', detail: store.state.documentName })
+  figdiag('fitCurrentPageToViewport:start')
   await store.fitCurrentPageToViewport()
+  figdiag('fitCurrentPageToViewport:done')
 }
 
 async function cacheOpenedFigCover(path: string, store: EditorStore): Promise<void> {

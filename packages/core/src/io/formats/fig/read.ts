@@ -82,7 +82,9 @@ function parseViaWorker(
         return
       }
       try {
+        figdiag('deserializeSceneGraph:start', { images: e.data.graph.images.length })
         const graph = deserializeSceneGraph(e.data.graph)
+        figdiag('deserializeSceneGraph:done', { nodes: graph.nodes.size })
         if (options.populate === 'first-page') {
           cleanupAbort()
           registerFigPopulationWorker(graph, worker, channel.port1)
@@ -139,7 +141,9 @@ function parseViaWorker(
       options: { populate: options.populate },
       port: channel.port2
     }
+    figdiag('worker:postMessage:start', { bytes: transferBuffer.byteLength, transferOwnership })
     worker.postMessage(request, [transferBuffer, channel.port2])
+    figdiag('worker:postMessage:done')
   })
 }
 
@@ -168,12 +172,24 @@ export async function parseFigFile(
   return parseFigFileSync(buffer, options)
 }
 
+// TEMPORARY diagnostic logging for tracking down a large-file crash.
+// Remove once resolved.
+function figdiag(step: string, extra?: Record<string, unknown>): void {
+  const mem = (performance as { memory?: { usedJSHeapSize: number } }).memory
+  console.log(
+    `[figdiag:main] ${step}`,
+    JSON.stringify({ ...extra, heapMB: mem ? +(mem.usedJSHeapSize / 1e6).toFixed(1) : null })
+  )
+}
+
 export async function readFigFile(
   file: File,
   options: ParseFigFileOptions = {}
 ): Promise<SceneGraph> {
   options.signal?.throwIfAborted()
+  figdiag('arrayBuffer:start', { fileBytes: file.size })
   const buffer = await file.arrayBuffer()
+  figdiag('arrayBuffer:done', { bytes: buffer.byteLength })
   options.signal?.throwIfAborted()
 
   if (typeof Worker === 'undefined' || !IS_BROWSER) {
