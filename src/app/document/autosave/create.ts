@@ -53,12 +53,17 @@ export function createAutosave({
     return saving
   }
 
+  // Short debounce: still batches a rapid burst of changes within one
+  // action (e.g. every intermediate frame of a drag, each keystroke while
+  // typing) into a single save, but a save fires very shortly after the
+  // action ends rather than requiring 3s of idle time — "auto save within
+  // each action", not "auto save after a long pause".
   const stop = watchDebounced(
     () => state.sceneVersion,
     (version) => {
       void requestSave(version).catch(reportFailure)
     },
-    { debounce: 3000 }
+    { debounce: 400 }
   )
 
   return {
