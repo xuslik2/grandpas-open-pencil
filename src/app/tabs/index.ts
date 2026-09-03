@@ -480,7 +480,12 @@ export async function openStorageDocumentInNewTab(document: StorageDocument): Pr
 export async function openFileInNewTab(
   file: File,
   handle?: FileSystemFileHandle,
-  path?: string
+  path?: string,
+  /**
+   * Hosted mode only: land the imported document in this project instead
+   * of the Drafts fallback. Used by the dashboard's per-project import.
+   */
+  targetProjectId?: string
 ): Promise<void> {
   const identity: DocumentSourceIdentity = {
     handle: handle ?? null,
@@ -593,6 +598,7 @@ export async function openFileInNewTab(
               providerId: activeStorageProviderID.value,
               documentId: crypto.randomUUID()
             }
+            if (targetProjectId) registerPendingProject(binding.documentId, targetProjectId)
             store.setStorageDocumentSource(binding, file.name.replace(/\.[^.]+$/i, ''), {
               markSaved: false
             })

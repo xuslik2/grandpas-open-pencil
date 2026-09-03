@@ -11,9 +11,11 @@ import {
   workspaceRefreshToken
 } from '@/app/hosted/hierarchy/store'
 import { selectedProject } from '@/app/hosted/navigation/store'
+import { importFilesIntoProject } from '@/app/shell/menu/files'
 import { createDocumentInProject, openStorageDocumentInNewTab } from '@/app/tabs'
 
 const openError = ref<string | null>(null)
+const importing = ref(false)
 const draggingDocumentId = ref<string | null>(null)
 
 void ensureFavoritesLoaded()
@@ -58,6 +60,24 @@ async function openDocument(id: string, name: string, updatedAt: string) {
     await openStorageDocumentInNewTab({ id, name, updatedAt })
   } catch (err) {
     openError.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+async function importDocuments() {
+  const project = selectedProject.value
+  if (!project || importing.value) return
+  openError.value = null
+  importing.value = true
+  try {
+    // Opens each imported file in a tab, which is also what saves it into
+    // this project — the import isn't complete until that first save, so
+    // the file list refreshes afterwards rather than optimistically.
+    await importFilesIntoProject(project.id)
+    await workspace.refresh()
+  } catch (err) {
+    openError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    importing.value = false
   }
 }
 
@@ -161,6 +181,16 @@ void workspace.refresh()
       <h2 class="min-w-0 flex-1 truncate text-base font-semibold">{{ selectedProject?.name }}</h2>
       <button
         type="button"
+        class="flex items-center gap-1 rounded border border-border px-2.5 py-1.5 text-xs hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
+        :disabled="importing"
+        title="Import a .fig file into this project"
+        @click="importDocuments"
+      >
+        <icon-lucide-upload class="size-3.5" />
+        {{ importing ? 'Importing…' : 'Import' }}
+      </button>
+      <button
+        type="button"
         class="flex items-center gap-1 rounded border border-border px-2.5 py-1.5 text-xs hover:bg-hover"
         @click="newDocument"
       >
@@ -218,9 +248,18 @@ void workspace.refresh()
 
     <div
       v-else
-      class="rounded-lg border border-dashed border-border px-4 py-4 text-center text-xs text-muted sm:py-6"
+      class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted sm:py-8"
     >
-      No files in this project yet.
+      <p>No files in this project yet.</p>
+      <button
+        type="button"
+        class="flex items-center gap-1 rounded border border-border px-2.5 py-1.5 text-xs text-surface hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
+        :disabled="importing"
+        @click="importDocuments"
+      >
+        <icon-lucide-upload class="size-3.5" />
+        {{ importing ? 'Importing…' : 'Import a .fig file' }}
+      </button>
     </div>
   </section>
 </template>

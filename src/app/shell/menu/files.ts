@@ -108,6 +108,59 @@ export async function openFileFromPath(path: string) {
   rememberRecentFile(path)
 }
 
+/**
+ * Dashboard "Import" — picks design files and lands them in a specific
+ * project, rather than the Drafts fallback a plain File → Open uses.
+ * Deliberately its own picker rather than a flag on openFileDialog: this
+ * one is web-only (the dashboard doesn't exist in the desktop build) and
+ * accepts only formats that can become a hosted document.
+ */
+export async function importFilesIntoProject(projectId: string): Promise<void> {
+  const importFile = async (file: File) => {
+    assertSupportedDesignFile(file.name)
+    await openFileInNewTab(file, undefined, undefined, projectId)
+  }
+
+  if (window.showOpenFilePicker) {
+    try {
+      const handles = await window.showOpenFilePicker({
+        multiple: true,
+        types: [
+          {
+            description: 'Design file',
+            accept: {
+              'application/octet-stream': ['.fig'],
+              'application/json': ['.pen'],
+              'text/plain': ['.pen']
+            }
+          }
+        ]
+      })
+      await openDesignFileBatch(
+        handles,
+        (handle) => handle.name,
+        async (handle) => importFile(await handle.getFile())
+      )
+      return
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return
+    }
+  }
+
+  // Fallback for browsers without the File System Access API: a plain
+  // input, wired to the same per-project import.
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.fig,.pen'
+  input.multiple = true
+  const chosen = await new Promise<FileList | null>((resolve) => {
+    input.addEventListener('change', () => resolve(input.files), { once: true })
+    input.addEventListener('cancel', () => resolve(null), { once: true })
+    input.click()
+  })
+  if (chosen) await openDesignFileBatch(chosen, (file) => file.name, importFile)
+}
+
 export async function openFileDialog() {
   if (isTauri()) {
     const paths = await chooseTauriOpenPaths()
