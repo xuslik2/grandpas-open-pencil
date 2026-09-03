@@ -1,6 +1,6 @@
 import type { StorageAdapter, StorageDocument } from '../types'
 import { apiGet, apiGetBytes, apiGetOrNull, apiJson, apiPutBytes, HostedApiError } from './client'
-import { getDraftsProjectId } from './default-project'
+import { resolveTargetProjectId } from './default-project'
 
 type ApiDocument = {
   id: string
@@ -19,12 +19,13 @@ function toStorageDocument(doc: ApiDocument): StorageDocument {
   }
 }
 
-// Creates the document row (in a lazily-resolved "Drafts" project — see
-// default-project.ts) the first time putDocument sees an id the server
-// doesn't know about yet. Idempotent server-side, so a racing duplicate
-// create for the same id is harmless.
+// Creates the document row the first time putDocument sees an id the
+// server doesn't know about yet — in whatever project was registered for
+// it (dashboard "+ New file"), falling back to a lazily-resolved "Drafts"
+// project otherwise (see default-project.ts). Idempotent server-side, so
+// a racing duplicate create for the same id is harmless.
 async function ensureDocumentExists(id: string, name: string): Promise<void> {
-  const projectId = await getDraftsProjectId()
+  const projectId = await resolveTargetProjectId(id)
   await apiJson('POST', `/projects/${projectId}/documents`, { id, name })
 }
 

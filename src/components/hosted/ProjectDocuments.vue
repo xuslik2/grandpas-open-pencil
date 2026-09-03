@@ -2,17 +2,15 @@
 import { computed, ref } from 'vue'
 import { useDocumentWorkspace } from '@open-pencil/vue'
 import {
-  createProjectDocument,
   favoriteDocument,
   listFavoriteDocuments,
   listProjectDocuments,
   unfavoriteDocument
 } from '@/app/hosted/hierarchy/api'
 import { selectedProject } from '@/app/hosted/navigation/store'
-import { openStorageDocumentInNewTab } from '@/app/tabs'
+import { createDocumentInProject, openStorageDocumentInNewTab } from '@/app/tabs'
 
 const openError = ref<string | null>(null)
-const creating = ref(false)
 const favoritedIds = ref<Set<string>>(new Set())
 
 void listFavoriteDocuments().then((docs) => {
@@ -63,18 +61,15 @@ async function openDocument(id: string, name: string, updatedAt: string) {
   }
 }
 
-async function newDocument() {
+function newDocument() {
   if (!selectedProject.value) return
-  creating.value = true
   openError.value = null
-  try {
-    const doc = await createProjectDocument(selectedProject.value.id, 'Untitled')
-    await openStorageDocumentInNewTab({ id: doc.id, name: doc.name, updatedAt: doc.updated_at })
-  } catch (err) {
-    openError.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    creating.value = false
-  }
+  // Opens a genuinely valid new local document (same path a plain new tab
+  // takes), just targeted at this project instead of the Drafts fallback —
+  // see tabs/index.ts's createDocumentInProject for why this replaced an
+  // earlier approach that pre-created an empty row server-side (empty
+  // bytes aren't a valid .fig/zip container, so it failed to open).
+  createDocumentInProject(selectedProject.value.id)
 }
 
 function relativeTime(iso: string): string {
@@ -107,8 +102,7 @@ void workspace.refresh()
       <h2 class="min-w-0 flex-1 truncate text-base font-semibold">{{ selectedProject?.name }}</h2>
       <button
         type="button"
-        class="flex items-center gap-1 rounded border border-border px-2.5 py-1.5 text-xs hover:bg-hover disabled:opacity-60"
-        :disabled="creating"
+        class="flex items-center gap-1 rounded border border-border px-2.5 py-1.5 text-xs hover:bg-hover"
         @click="newDocument"
       >
         <icon-lucide-plus class="size-3.5" />

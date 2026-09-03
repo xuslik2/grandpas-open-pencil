@@ -26,6 +26,7 @@ import {
   type StorageDocument
 } from '@/app/integrations/storage'
 import { IS_TAURI } from '@/constants'
+import { registerPendingProject } from '@/app/integrations/storage/hosted/default-project'
 import {
   cacheRecentFileThumbnail,
   loadCachedRecentFileThumbnail,
@@ -115,6 +116,18 @@ export function createTab(store?: EditorStore, initialGraph?: SceneGraph): Tab {
   const tab: Tab = { id: generateTabId(), store: s, kind: 'document' }
   tabsRef.value = [...tabsRef.value, tab]
   activateTab(tab)
+  return tab
+}
+
+// Dashboard's "+ New file in project X": same local-document creation as
+// a plain new tab (createTab already produces a genuinely valid blank
+// .fig — reusing it here instead of pre-seeding empty bytes server-side,
+// which isn't a valid zip container and fails to open), just targeted at
+// a specific project instead of the generic Drafts fallback.
+export function createDocumentInProject(projectId: string): Tab {
+  const tab = createTab()
+  const binding = tab.store.getStorageBinding()
+  if (binding) registerPendingProject(binding.documentId, projectId)
   return tab
 }
 

@@ -40,3 +40,23 @@ export function getDraftsProjectId(): Promise<string> {
   })
   return cachedProjectId
 }
+
+// One-shot overrides: the dashboard's "+ New file in project X" registers
+// the target project for a specific soon-to-exist document id here (see
+// tabs/index.ts's createDocumentInProject), consumed the first time that
+// id is actually saved. Falls back to Drafts for anything that never gets
+// an explicit target — e.g. a plain new tab created outside the dashboard.
+const pendingProjectByDocument = new Map<string, string>()
+
+export function registerPendingProject(documentId: string, projectId: string): void {
+  pendingProjectByDocument.set(documentId, projectId)
+}
+
+export function resolveTargetProjectId(documentId: string): Promise<string> {
+  const pending = pendingProjectByDocument.get(documentId)
+  if (pending) {
+    pendingProjectByDocument.delete(documentId)
+    return Promise.resolve(pending)
+  }
+  return getDraftsProjectId()
+}
