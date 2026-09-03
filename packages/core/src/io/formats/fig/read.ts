@@ -34,7 +34,11 @@ function parseFigFileSync(buffer: ArrayBuffer, options: ParseFigFileOptions = {}
   return graph
 }
 
-function parseViaWorker(buffer: ArrayBuffer, options: ParseFigFileOptions): Promise<SceneGraph> {
+function parseViaWorker(
+  buffer: ArrayBuffer,
+  options: ParseFigFileOptions,
+  transferOwnership = false
+): Promise<SceneGraph> {
   return new Promise((resolve, reject) => {
     options.signal?.throwIfAborted()
     const worker = createFigSessionWorker()
@@ -124,7 +128,11 @@ function parseViaWorker(buffer: ArrayBuffer, options: ParseFigFileOptions): Prom
     // from this buffer and retains it as the archive snapshot. Sending two
     // independent duplicates here used to double the peak memory cost for
     // every file open, which mattered a lot for large (100MB+) .fig files.
-    const transferBuffer = buffer.slice(0)
+    // transferOwnership skips even this one remaining copy when the
+    // caller doesn't need `buffer` to stay valid afterward (readFigFile:
+    // it can just re-read the file fresh on the rare worker failure,
+    // instead of always paying for a spare copy just in case).
+    const transferBuffer = transferOwnership ? buffer : buffer.slice(0)
     const request: FigSessionOpenRequest = {
       type: 'open',
       buffer: transferBuffer,
@@ -167,5 +175,27 @@ export async function readFigFile(
   options.signal?.throwIfAborted()
   const buffer = await file.arrayBuffer()
   options.signal?.throwIfAborted()
-  return parseFigFile(buffer, options)
+
+  if (typeof Worker === 'undefined' || !IS_BROWSER) {
+    return parseFigFileSync(buffer, options)
+  }
+
+  try {
+    // Transfers `buffer` itself to the worker (no spare copy) — unlike
+    // parseFigFile's usual safety copy, readFigFile can just re-read the
+    // file fresh below if the worker fails, since it still has `file`.
+    // For a single very large file, reading it is already a big
+    // allocation on its own; routinely doubling that "just in case" made
+    // large opens more likely to hit memory limits well below what the
+    // system actually has available.
+    return await parseViaWorker(buffer, options, true)
+  } catch (error) {
+    if (options.signal?.aborted) throw error
+    console.warn('Worker parsing failed, falling back to main thread:', error)
+    const retryBuffer = await file.arrayBuffer()
+    options.signal?.throwIfAborted()
+    const graph = parseFigFileSync(retryBuffer, options)
+    registerOriginalArchiveRequest(graph, async () => new Uint8Array(retryBuffer.slice(0)))
+    return graph
+  }
 }
