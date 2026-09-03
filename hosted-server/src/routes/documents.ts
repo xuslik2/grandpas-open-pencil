@@ -29,14 +29,14 @@ documentRoutes.get('/', async (c) => {
 documentRoutes.get('/usage', async (c) => {
   const user = c.get('user')
   const { rows } = await pool.query(
-    `select count(*)::int as document_count
+    `select count(*)::int as document_count, coalesce(sum(d.size_bytes), 0)::bigint as bytes_used
        from documents d
        join projects p on p.id = d.project_id
        join team_members m on m.team_id = p.team_id
       where m.user_id = $1 and d.deleted_at is null`,
     [user.id]
   )
-  return c.json({ documentCount: rows[0].document_count })
+  return c.json({ documentCount: rows[0].document_count, bytesUsed: Number(rows[0].bytes_used) })
 })
 
 documentRoutes.get('/favorites', async (c) => {
@@ -136,9 +136,9 @@ documentRoutes.put(
     await writeAtKey(rows[0].fig_object_key, bytes)
 
     const { rows: updated } = await pool.query(
-      `update documents set updated_at = now(), revision = revision + 1
+      `update documents set updated_at = now(), revision = revision + 1, size_bytes = $2
        where id = $1 returning revision`,
-      [c.req.param('documentId')]
+      [c.req.param('documentId'), bytes.byteLength]
     )
     return c.json({ ok: true, revision: updated[0].revision })
   }

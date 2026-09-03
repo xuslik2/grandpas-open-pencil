@@ -1,5 +1,6 @@
 import { defineStorageProvider, StorageProviderRegistry } from './registry'
 import { createS3StorageAdapter } from './s3/adapter'
+import { createHostedStorageAdapter } from './hosted/adapter'
 
 export const S3_STORAGE_PROVIDER = defineStorageProvider({
   id: 's3-compatible',
@@ -17,4 +18,18 @@ export const S3_STORAGE_PROVIDER = defineStorageProvider({
   createAdapter: createS3StorageAdapter
 })
 
-export const storageProviderRegistry = new StorageProviderRegistry([S3_STORAGE_PROVIDER])
+// Auth is a same-origin session cookie (see app/hosted/auth) — no fields
+// for the user to fill in, unlike S3.
+export const HOSTED_STORAGE_PROVIDER = defineStorageProvider({
+  id: 'hosted-server',
+  label: "Grandpa's Studio",
+  description: "Your team's hosted storage.",
+  preferenceFields: [],
+  credentialFields: [],
+  createAdapter: createHostedStorageAdapter
+})
+
+export const storageProviderRegistry = new StorageProviderRegistry([
+  HOSTED_STORAGE_PROVIDER,
+  S3_STORAGE_PROVIDER
+])

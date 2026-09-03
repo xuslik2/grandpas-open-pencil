@@ -5,9 +5,13 @@ import type { StorageFieldID, StorageProviderID } from './types'
 
 export type StoragePreferences = Record<StorageProviderID, Record<StorageFieldID, string>>
 
+// Grandpa's Studio deployment: hosted-server is the only storage that
+// makes sense here, so it's the default rather than S3. Still an
+// overridable per-browser localStorage value, not hardcoded, in case
+// that ever needs to change.
 export const activeStorageProviderID = useLocalStorage<StorageProviderID>(
   'open-pencil:storage:provider',
-  's3-compatible'
+  'hosted-server'
 )
 
 const storedPreferences = useLocalStorage<StoragePreferences>('open-pencil:storage:preferences', {})

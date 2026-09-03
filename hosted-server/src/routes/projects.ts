@@ -85,6 +85,7 @@ projectRoutes.post(
 )
 
 const createDocumentSchema = z.object({
+  id: z.string().uuid().optional(), // let the caller choose (e.g. the editor's own local id)
   name: z.string().min(1).max(200).default('Untitled'),
   folderId: z.string().uuid().nullable().optional(),
 })
@@ -101,16 +102,23 @@ projectRoutes.post(
 
     const user = c.get('user')
     const projectId = c.req.param('projectId')! // guaranteed by the matched route
-    const documentId = crypto.randomUUID()
+    const documentId = parsed.data.id ?? crypto.randomUUID()
     const objectKey = documentObjectKey(projectId, documentId)
 
+    // Idempotent on id: the adapter may retry a create after a network
+    // failure without knowing whether the first attempt landed.
     const { rows } = await pool.query(
       `insert into documents (id, project_id, folder_id, name, created_by, fig_object_key)
        values ($1, $2, $3, $4, $5, $6)
+       on conflict (id) do update set id = excluded.id
        returning id, project_id, folder_id, name, updated_at, created_by, revision`,
       [documentId, projectId, parsed.data.folderId ?? null, parsed.data.name, user.id, objectKey]
     )
-    await writeAtKey(objectKey, new Uint8Array())
+    if (!parsed.data.id) {
+      // Only seed empty bytes for a genuinely new document — a retried
+      // create for an existing id must not clobber content already saved.
+      await writeAtKey(objectKey, new Uint8Array())
+    }
     return c.json({ document: rows[0] }, 201)
   }
 )

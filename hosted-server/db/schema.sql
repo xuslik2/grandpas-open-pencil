@@ -79,6 +79,7 @@ create table documents (
   updated_at timestamptz not null default now(),
   created_by uuid not null references users(id),
   revision bigint not null default 0,
+  size_bytes bigint not null default 0,
   deleted_at timestamptz,
   fig_object_key text not null,
   thumb_object_key text
