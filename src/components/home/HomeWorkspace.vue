@@ -22,8 +22,14 @@ import { openSettingsDialog } from '@/app/settings/dialog'
 import { openFileFromPath } from '@/app/shell/menu/use'
 import { createStorageWorkspaceSource } from '@/app/storage/workspace/source'
 import { openStorageDocumentInNewTab } from '@/app/tabs'
+import { selectedProject } from '@/app/hosted/navigation/store'
 import HomeSearchActions from '@/components/home/search/HomeSearchActions.vue'
+import FavoritesSection from '@/components/hosted/FavoritesSection.vue'
+import ProjectDocuments from '@/components/hosted/ProjectDocuments.vue'
+import ProjectsSection from '@/components/hosted/ProjectsSection.vue'
 import Tip from '@/components/ui/Tip.vue'
+
+const isHostedMode = computed(() => activeStorageProviderID.value === 'hosted-server')
 
 const emit = defineEmits<{ 'new-document': [] }>()
 const { panels, locale, storage, files, common, settings } = useI18n()
@@ -315,7 +321,13 @@ function formattedDate(updatedAt: string): string {
         </div>
       </section>
 
-      <section class="mt-7">
+      <template v-if="isHostedMode">
+        <FavoritesSection />
+        <ProjectDocuments v-if="selectedProject" />
+        <ProjectsSection v-else />
+      </template>
+
+      <section v-else class="mt-7">
         <div class="mb-3 flex items-start gap-3">
           <div class="min-w-0">
             <h2 class="text-base font-semibold">{{ storage.workspace }}</h2>

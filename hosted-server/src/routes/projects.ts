@@ -27,6 +27,24 @@ projectRoutes.get('/:projectId', requireTeamRole('viewer', teamIdForProject), as
   return c.json({ project: rows[0] })
 })
 
+// Documents within one project — what the dashboard shows when you click
+// into a project card. Distinct from the flat /documents resource, which
+// spans every project the user can see.
+projectRoutes.get(
+  '/:projectId/documents',
+  requireTeamRole('viewer', teamIdForProject),
+  async (c) => {
+    const { rows } = await pool.query(
+      `select id, name, updated_at, folder_id, (thumb_object_key is not null) as has_thumbnail
+         from documents
+        where project_id = $1 and deleted_at is null
+        order by updated_at desc`,
+      [c.req.param('projectId')]
+    )
+    return c.json({ documents: rows })
+  }
+)
+
 projectRoutes.patch('/:projectId', requireTeamRole('editor', teamIdForProject), async (c) => {
   const parsed = patchProjectSchema.safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: 'invalid request' }, 400)

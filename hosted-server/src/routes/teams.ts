@@ -53,12 +53,23 @@ const createProjectSchema = z.object({
 })
 
 // Any team member can see projects; creating one requires editor+.
+// Includes each project's most-recently-updated document (for the
+// dashboard's card thumbnail) via a lateral join rather than N+1 queries.
 teamRoutes.get('/:teamId/projects', requireTeamRole('viewer', teamIdFromParam), async (c) => {
   const { rows } = await pool.query(
-    `select id, name, created_by, created_at, archived_at
-       from projects
-      where team_id = $1 and archived_at is null
-      order by name`,
+    `select p.id, p.name, p.created_by, p.created_at, p.archived_at,
+            d.id as latest_document_id, d.updated_at as latest_document_updated_at,
+            (d.thumb_object_key is not null) as latest_document_has_thumbnail
+       from projects p
+       left join lateral (
+         select id, updated_at, thumb_object_key
+           from documents
+          where project_id = p.id and deleted_at is null
+          order by updated_at desc
+          limit 1
+       ) d on true
+      where p.team_id = $1 and p.archived_at is null
+      order by p.name`,
     [c.req.param('teamId')]
   )
   return c.json({ projects: rows })
