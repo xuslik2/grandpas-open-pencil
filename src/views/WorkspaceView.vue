@@ -20,8 +20,10 @@ import {
   tabCount
 } from '@/app/tabs'
 import { isTauri } from '@/app/tauri/env'
+import { isPresenting } from '@/app/present/store'
 import FontStatusBanner from '@/components/font-status/FontStatusBanner.vue'
 import CommandPalette from '@/components/commands/CommandPalette.vue'
+import PresentOverlay from '@/components/present/PresentOverlay.vue'
 import SafariBanner from '@/components/SafariBanner.vue'
 import TabBar from '@/components/TabBar.vue'
 import RenameSelectionDialog from '@/components/selection/RenameSelectionDialog.vue'
@@ -102,8 +104,9 @@ onUnmounted(() => {
     <FontStatusBanner />
     <RenameSelectionDialog />
     <CommandPalette />
-    <TabBar />
+    <TabBar v-show="!isPresenting" />
     <HomeWorkspace v-show="activeTab?.kind === 'home'" @new-document="createDocumentInCurrentTab" />
     <EditorWorkspace v-if="activeTab?.kind !== 'home'" />
+    <PresentOverlay />
   </div>
 </template>

@@ -58,9 +58,8 @@ export function createViewportActions(ctx: EditorContext) {
     emitViewportChanged(previous)
   }
 
-  function zoomToBounds(minX: number, minY: number, maxX: number, maxY: number) {
+  function zoomToBounds(minX: number, minY: number, maxX: number, maxY: number, padding = 80) {
     const previous = currentViewport()
-    const padding = 80
     const w = maxX - minX + padding * 2
     const h = maxY - minY + padding * 2
 
