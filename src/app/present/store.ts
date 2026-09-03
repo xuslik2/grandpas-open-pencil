@@ -68,6 +68,7 @@ async function showSlide(store: EditorStore, index: number): Promise<void> {
 }
 
 let previousShowUI = true
+let previousShowRulers = true
 
 export function hasPresentableSlides(): boolean {
   const store = useEditorStore()
@@ -112,7 +113,9 @@ export async function enterPresentMode(): Promise<void> {
   if (slides.value.length === 0) return
 
   previousShowUI = store.state.showUI
+  previousShowRulers = store.state.showRulers
   store.state.showUI = false
+  store.state.showRulers = false
   store.clearSelection()
   isPresenting.value = true
   window.addEventListener('keydown', handleKeydown, true)
@@ -137,6 +140,7 @@ export async function exitPresentMode(): Promise<void> {
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
   const store = useEditorStore()
   store.state.showUI = previousShowUI
+  store.state.showRulers = previousShowRulers
   if (document.fullscreenElement) {
     try {
       await document.exitFullscreen()

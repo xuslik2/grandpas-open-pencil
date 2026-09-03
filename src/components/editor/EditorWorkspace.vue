@@ -5,6 +5,7 @@ import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import { formatShortcut, useI18n, useViewportKind } from '@open-pencil/vue'
 
 import { useEditorStore } from '@/app/editor/active-store'
+import { isPresenting } from '@/app/present/store'
 import { appRuntimeConfig } from '@/app/runtime/config'
 import { appMenuShortcut } from '@/app/shell/menu/shortcut'
 import { activeTab } from '@/app/tabs'
@@ -95,7 +96,7 @@ const horizontalSplitterStyles = tv(splitterTheme)({ direction: 'horizontal' })
     <div class="relative flex min-w-0 flex-1">
       <EditorCanvas />
       <div
-        v-if="!isMobile"
+        v-if="!isMobile && !isPresenting"
         class="absolute top-7 left-7 z-10 flex items-center gap-2 rounded-lg border border-border bg-panel px-2 py-1 shadow-sm"
       >
         <img src="/favicon-32.png" class="size-4" alt="OpenPencil" />
