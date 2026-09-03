@@ -8,6 +8,7 @@
 import { computed, ref } from 'vue'
 
 import { useEditorStore, type EditorStore } from '@/app/editor/active-store'
+import { toast } from '@/app/shell/ui'
 
 export interface PresentSlide {
   id: string
@@ -70,11 +71,6 @@ async function showSlide(store: EditorStore, index: number): Promise<void> {
 let previousShowUI = true
 let previousShowRulers = true
 
-export function hasPresentableSlides(): boolean {
-  const store = useEditorStore()
-  return collectSlides(store).length > 0
-}
-
 // Captures arrow/space/escape while presenting so they navigate slides
 // instead of triggering the editor's normal shortcuts (nudge, deselect,
 // etc). Registered only for the lifetime of a presentation, not globally.
@@ -110,7 +106,10 @@ function handleFullscreenChange(): void {
 export async function enterPresentMode(): Promise<void> {
   const store = useEditorStore()
   slides.value = collectSlides(store)
-  if (slides.value.length === 0) return
+  if (slides.value.length === 0) {
+    toast.info('Add a frame to this page to present it as a slide.')
+    return
+  }
 
   previousShowUI = store.state.showUI
   previousShowRulers = store.state.showRulers
