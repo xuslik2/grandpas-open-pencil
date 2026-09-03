@@ -15,6 +15,12 @@ const { tabs, activeTabId, switchTab, closeTab } = useTabsStore()
 const tabBarStyles = tv(tabBarTheme)
 const baseStyles = tabBarStyles()
 
+// Home no longer gets its own pill in the strip — the dedicated Home
+// button to the left already covers "go to the dashboard", so a second
+// "New tab" entry here was just a redundant, closable, re-creatable copy
+// of the same destination. Document tabs still show normally.
+const visibleTabs = computed(() => tabs.value.filter((tab) => !tab.isHome))
+
 const modelValue = computed({
   get: () => activeTabId.value,
   set: (id: string) => switchTab(id)
@@ -65,35 +71,31 @@ function onClose(e: MouseEvent, tabId: string) {
       class="scrollbar-none flex h-full min-w-0 flex-1 items-end overflow-x-auto"
     >
       <TabsList :class="baseStyles.list()">
-      <TabsTrigger
-        v-for="tab in tabs"
-        :key="tab.id"
-        :value="tab.id"
-        data-test-id="tabbar-tab"
-        :class="tabBarStyles({ active: tab.isActive }).trigger()"
-        :data-active="tab.isActive || undefined"
-        @mousedown="onMiddleClick($event, tab.id, tab.isHome)"
-      >
-        <icon-lucide-house v-if="tab.isHome" :class="baseStyles.icon()" />
-        <PreparationIndicator v-else-if="tab.isPreparing" :progress="tab.preparationProgress" />
-        <icon-lucide-file v-else :class="baseStyles.icon()" />
-        <span :class="baseStyles.label()">{{ tab.isHome ? files.newTab : tab.name }}</span>
-        <Tip
-          v-if="!tab.isHome || tabs.length > 1"
-          :label="files.closeTab({ name: tab.isHome ? files.newTab : tab.name })"
+        <TabsTrigger
+          v-for="tab in visibleTabs"
+          :key="tab.id"
+          :value="tab.id"
+          data-test-id="tabbar-tab"
+          :class="tabBarStyles({ active: tab.isActive }).trigger()"
+          :data-active="tab.isActive || undefined"
+          @mousedown="onMiddleClick($event, tab.id, tab.isHome)"
         >
-          <button
-            data-test-id="tabbar-close"
-            :class="tabBarStyles({ active: tab.isActive }).close()"
-            :data-active="tab.isActive || undefined"
-            :aria-label="files.closeTab({ name: tab.isHome ? files.newTab : tab.name })"
-            tabindex="-1"
-            @click="onClose($event, tab.id)"
-          >
-            <icon-lucide-x :class="baseStyles.closeIcon()" />
-          </button>
-        </Tip>
-      </TabsTrigger>
+          <PreparationIndicator v-if="tab.isPreparing" :progress="tab.preparationProgress" />
+          <icon-lucide-file v-else :class="baseStyles.icon()" />
+          <span :class="baseStyles.label()">{{ tab.name }}</span>
+          <Tip :label="files.closeTab({ name: tab.name })">
+            <button
+              data-test-id="tabbar-close"
+              :class="tabBarStyles({ active: tab.isActive }).close()"
+              :data-active="tab.isActive || undefined"
+              :aria-label="files.closeTab({ name: tab.name })"
+              tabindex="-1"
+              @click="onClose($event, tab.id)"
+            >
+              <icon-lucide-x :class="baseStyles.closeIcon()" />
+            </button>
+          </Tip>
+        </TabsTrigger>
       </TabsList>
       <Tip :label="files.newTab">
         <button
