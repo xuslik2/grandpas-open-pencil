@@ -6,7 +6,7 @@ import { tv } from 'tailwind-variants'
 import PreparationIndicator from '@/components/preparation/tab/Indicator.vue'
 import Tip from '@/components/ui/Tip.vue'
 import tabBarTheme from '@/theme/tab-bar'
-import { useTabsStore, createHomeTab } from '@/app/tabs'
+import { useTabsStore, createHomeTab, showNewTab } from '@/app/tabs'
 import { useI18n } from '@open-pencil/vue'
 
 const { files } = useI18n()
@@ -40,13 +40,31 @@ function onClose(e: MouseEvent, tabId: string) {
 </script>
 
 <template>
-  <TabsRoot
-    v-if="tabs.length > 0"
-    v-model="modelValue"
-    activation-mode="automatic"
-    :class="baseStyles.root()"
-  >
-    <TabsList :class="baseStyles.list()">
+  <!-- Outer wrapper carries the tab-strip chrome (bg/border/height) so it
+       applies whether or not any tabs exist — the Home button below must
+       always render, unlike TabsRoot which needs at least one tab. -->
+  <div :class="baseStyles.root()">
+    <!-- Always-visible Home affordance, separate from the closable "home"
+         entry in the tab list below — closing that tab (or never having
+         opened one) shouldn't mean losing the way back to the dashboard. -->
+    <Tip label="Home">
+      <button
+        data-test-id="tabbar-home"
+        :class="baseStyles.newAction()"
+        aria-label="Home"
+        @click="showNewTab()"
+      >
+        <icon-lucide-house :class="baseStyles.newIcon()" />
+      </button>
+    </Tip>
+
+    <TabsRoot
+      v-if="tabs.length > 0"
+      v-model="modelValue"
+      activation-mode="automatic"
+      class="scrollbar-none flex h-full min-w-0 flex-1 items-end overflow-x-auto"
+    >
+      <TabsList :class="baseStyles.list()">
       <TabsTrigger
         v-for="tab in tabs"
         :key="tab.id"
@@ -76,16 +94,17 @@ function onClose(e: MouseEvent, tabId: string) {
           </button>
         </Tip>
       </TabsTrigger>
-    </TabsList>
-    <Tip :label="files.newTab">
-      <button
-        data-test-id="tabbar-new"
-        :class="baseStyles.newAction()"
-        :aria-label="files.newTab"
-        @click="createNewTab"
-      >
-        <icon-lucide-plus :class="baseStyles.newIcon()" />
-      </button>
-    </Tip>
-  </TabsRoot>
+      </TabsList>
+      <Tip :label="files.newTab">
+        <button
+          data-test-id="tabbar-new"
+          :class="baseStyles.newAction()"
+          :aria-label="files.newTab"
+          @click="createNewTab"
+        >
+          <icon-lucide-plus :class="baseStyles.newIcon()" />
+        </button>
+      </Tip>
+    </TabsRoot>
+  </div>
 </template>
