@@ -46,6 +46,35 @@ export async function switchTeam(team: Team | null): Promise<void> {
   projects.value = team ? await listProjects(team.id) : []
 }
 
+export const refreshing = ref(false)
+// Bumped on each manual refresh. Views holding their own document lists
+// (the open project's file grid) watch this, since a refresh doesn't
+// change the selected project's id and so wouldn't otherwise re-fetch.
+export const workspaceRefreshToken = ref(0)
+
+/**
+ * Re-fetches teams, the current team's projects, and favorites — for the
+ * dashboard's refresh control. Unlike ensureProjectsLoaded this ignores
+ * the already-loaded guard, so it picks up work done elsewhere (another
+ * device, a teammate, or a document that finished saving in another tab).
+ */
+export async function refreshWorkspace(): Promise<void> {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    teams.value = await listTeams()
+    const current = teams.value.find((t) => t.id === currentTeam.value?.id)
+    const remembered = teams.value.find((t) => t.id === lastTeamId.value)
+    await switchTeam(current ?? remembered ?? teams.value[0] ?? null)
+    favorites.value = await listFavoriteDocuments()
+    favoritesLoaded = true
+    loaded = true
+    workspaceRefreshToken.value++
+  } finally {
+    refreshing.value = false
+  }
+}
+
 export async function createTeam(name: string): Promise<Team> {
   const team = await apiCreateTeam(name)
   teams.value = [...teams.value, team]

@@ -7,7 +7,8 @@ import {
   ensureFavoritesLoaded,
   favorites,
   lastDocumentMove,
-  setFavorited
+  setFavorited,
+  workspaceRefreshToken
 } from '@/app/hosted/hierarchy/store'
 import { selectedProject } from '@/app/hosted/navigation/store'
 import { createDocumentInProject, openStorageDocumentInNewTab } from '@/app/tabs'
@@ -136,6 +137,12 @@ watch(
     if (id && id !== previousId) void workspace.refresh()
   }
 )
+
+// A manual refresh doesn't change the selected project's id, so the
+// watcher above wouldn't fire — this picks up files added elsewhere.
+watch(workspaceRefreshToken, () => {
+  if (selectedProject.value) void workspace.refresh()
+})
 
 void workspace.refresh()
 </script>

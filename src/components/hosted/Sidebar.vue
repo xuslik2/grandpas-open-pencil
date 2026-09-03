@@ -20,6 +20,8 @@ import {
   favorites,
   moveDocumentToProject,
   projects,
+  refreshing,
+  refreshWorkspace,
   reorderProjectsLocally,
   setFavorited,
   switchTeam,
@@ -189,6 +191,16 @@ const hasFavorites = computed(() => favorites.value.length > 0)
           </DropdownMenuContent>
         </DropdownMenuPortal>
       </DropdownMenuRoot>
+      <button
+        type="button"
+        class="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-hover hover:text-surface disabled:pointer-events-none disabled:opacity-40"
+        :disabled="refreshing"
+        aria-label="Refresh"
+        title="Refresh projects and files"
+        @click="refreshWorkspace"
+      >
+        <icon-lucide-refresh-cw class="size-3.5" :class="{ 'animate-spin': refreshing }" />
+      </button>
       <button
         type="button"
         class="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-hover hover:text-surface"

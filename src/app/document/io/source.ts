@@ -85,12 +85,19 @@ export function createDocumentSourceActions({
     onDownloadSuccess: (version) => recovery.markProtectedVersion(version)
   })
 
+  // How big the document actually is once encoded — only known after a
+  // save, which is fine: it just paces later saves (see autosave's
+  // delay steps), and the first save of a session is never the problem.
+  let lastDocumentBytes: number | null = null
+
   const autosave = createAutosave({
     state,
     getSavedVersion,
     hasWritableSource: () => !!getFileHandle() || !!getFilePath() || !!getStorageBinding(),
+    getLastDocumentBytes: () => lastDocumentBytes,
     saveCurrentDocument: async (version) => {
       const data = await buildFigFile()
+      lastDocumentBytes = data.byteLength
       await writeFile(data, version)
     }
   })
