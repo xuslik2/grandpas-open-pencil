@@ -23,7 +23,8 @@ import {
   activeStorageProviderID,
   createActiveStorageAdapter,
   storagePreferencesComplete,
-  type StorageDocument
+  type StorageDocument,
+  type StorageTransferProgress
 } from '@/app/integrations/storage'
 import { IS_TAURI } from '@/constants'
 import { registerPendingProject } from '@/app/integrations/storage/hosted/default-project'
@@ -252,7 +253,7 @@ function reusableTabStore(): { store: EditorStore; created: boolean } {
   return { store: createTab().store, created: true }
 }
 
-async function readFigForTab(file: File, signal?: AbortSignal): Promise<SceneGraph> {
+async function readFigForTab(file: Blob, signal?: AbortSignal): Promise<SceneGraph> {
   const imported = await readFigDocument(file, signal)
   const firstPageId = imported.getPages()[0]?.id
   if (firstPageId) computeAllLayouts(imported, firstPageId)
@@ -415,44 +416,50 @@ export async function openStorageDocumentInNewTab(document: StorageDocument): Pr
       localMetadata?.syncStatus !== 'synced' ||
       !document.metadataAuthoritative ||
       localMetadata.updatedAt >= document.updatedAt
-    let bytes = localBytes && localIsAuthoritative ? localBytes : null
+    // Blob throughout wherever the adapter supports it. Every step below
+    // — the local cache write, and the parse itself — takes a Blob
+    // without copying, so the document's bytes are never materialised on
+    // the main thread. A trace of this path opening a 163MB document
+    // showed it dying here with the JS heap at 200MB of a 4096MB limit:
+    // the buffers that exhausted the renderer were all off-heap, and
+    // there were four of them back to back.
+    let content: Uint8Array | Blob | null = localBytes && localIsAuthoritative ? localBytes : null
 
-    if (!bytes) {
-      bytes = await createActiveStorageAdapter(providerId).getDocument(
-        document.id,
-        (progress) =>
-          load.update({
-            phase: 'reading',
-            detail: document.name,
-            completed: progress.transferredBytes,
-            total: progress.totalBytes,
-            unit: 'bytes'
-          }),
-        load.signal
-      )
+    if (!content) {
+      const adapter = createActiveStorageAdapter(providerId)
+      const onProgress = (progress: StorageTransferProgress) =>
+        load.update({
+          phase: 'reading',
+          detail: document.name,
+          completed: progress.transferredBytes,
+          total: progress.totalBytes,
+          unit: 'bytes'
+        })
+
+      content = adapter.getDocumentBlob
+        ? await adapter.getDocumentBlob(document.id, onProgress, load.signal)
+        : await adapter.getDocument(document.id, onProgress, load.signal)
+
       await seedStorageCanvasFromRemote({
         providerId,
         canvasId: document.id,
         name: document.name,
         updatedAt: document.updatedAt,
-        figBytes: bytes
+        figBytes: content
       })
       load.signal.throwIfAborted()
     }
 
-    // Built straight from `bytes`. Copying into a second Uint8Array first
-    // bought nothing — File already copies its input into blob storage —
-    // and cost another full document-size allocation, back to back with
-    // the fetch buffer and the IndexedDB clone. A trace of this path
-    // opening a 163MB document showed the main thread stalling 12s in
-    // exactly that burst and the renderer then being killed, with the JS
-    // heap only at 200MB of a 4096MB limit: large buffers live off-heap,
-    // so what ran out was process memory, not the heap.
-    const file = new File([bytes], `${document.name}.fig`, {
-      type: 'application/octet-stream'
-    })
+    // A Blob is reused as-is rather than being copied into a File: the
+    // parser only needs something it can read ranges from, and wrapping
+    // it would copy the whole document into blob storage again for the
+    // sake of a filename nothing reads.
+    const source =
+      content instanceof Blob
+        ? content
+        : new File([content], `${document.name}.fig`, { type: 'application/octet-stream' })
     load.update({ phase: 'decoding', detail: document.name })
-    const imported = await readFigForTab(file, load.signal)
+    const imported = await readFigForTab(source, load.signal)
 
     // Documents saved to hosted storage carry no images in their archive
     // — they live in the team's content-addressed asset store. Wiring

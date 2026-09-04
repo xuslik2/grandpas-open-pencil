@@ -196,7 +196,7 @@ export async function parseFigFile(
 }
 
 export async function readFigFile(
-  file: File,
+  file: Blob,
   options: ParseFigFileOptions = {}
 ): Promise<SceneGraph> {
   options.signal?.throwIfAborted()

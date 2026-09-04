@@ -1,5 +1,13 @@
 import type { StorageAdapter, StorageDocument } from '../types'
-import { apiGet, apiGetBytes, apiGetOrNull, apiJson, apiPutBytes, HostedApiError } from './client'
+import {
+  apiGet,
+  apiGetBlob,
+  apiGetBytes,
+  apiGetOrNull,
+  apiJson,
+  apiPutBytes,
+  HostedApiError
+} from './client'
 import { resolveTargetProjectId } from './default-project'
 
 type ApiDocument = {
@@ -54,6 +62,14 @@ export function createHostedStorageAdapter(): StorageAdapter {
       // aren't expected to be huge enough for this to matter today.
       onProgress?.({ transferredBytes: bytes.length, totalBytes: bytes.length })
       return bytes
+    },
+
+    async getDocumentBlob(id, onProgress, signal) {
+      signal?.throwIfAborted()
+      const blob = await apiGetBlob(`/documents/${id}/content`)
+      if (!blob) throw new Error(`Document not found: ${id}`)
+      onProgress?.({ transferredBytes: blob.size, totalBytes: blob.size })
+      return blob
     },
 
     async putDocument(id, bytes, metadata, onProgress) {

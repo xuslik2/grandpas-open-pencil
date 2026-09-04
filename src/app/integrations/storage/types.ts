@@ -71,6 +71,21 @@ export interface StorageAdapter {
     onProgress?: (progress: StorageTransferProgress) => void,
     signal?: AbortSignal
   ): Promise<Uint8Array>
+  /**
+   * The same content as getDocument, as a Blob.
+   *
+   * Preferred wherever it exists: the bytes stay off the JS heap, can be
+   * handed to IndexedDB and to a worker without being copied, and are
+   * never materialised on the main thread at all. getDocument's
+   * Uint8Array costs a full document-size allocation before anything
+   * else has even started — for a large document, several in a row, which
+   * is enough to take the renderer down.
+   */
+  getDocumentBlob?(
+    id: string,
+    onProgress?: (progress: StorageTransferProgress) => void,
+    signal?: AbortSignal
+  ): Promise<Blob>
   putDocument(
     id: string,
     bytes: Uint8Array,

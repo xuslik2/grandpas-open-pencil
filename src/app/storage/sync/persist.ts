@@ -16,7 +16,32 @@ export type PersistStorageCanvasOptions = {
   providerId: StorageProviderID
   canvasId: string
   name: string
-  figBytes: Uint8Array
+  figBytes: Uint8Array | Blob
+}
+
+/**
+ * Random access over either form, without materialising a Blob.
+ *
+ * The thumbnail lives in the archive's central directory near the end of
+ * the file, so extracting it reads a few small ranges — reading a whole
+ * 163MB document into memory to find them is exactly the kind of
+ * allocation this path exists to avoid.
+ */
+function byteRangeReader(source: Uint8Array | Blob): {
+  size: number
+  read: (start: number, endExclusive: number) => Promise<Uint8Array>
+} {
+  if (source instanceof Blob) {
+    return {
+      size: source.size,
+      read: async (start, endExclusive) =>
+        new Uint8Array(await source.slice(start, endExclusive).arrayBuffer())
+    }
+  }
+  return {
+    size: source.byteLength,
+    read: async (start, endExclusive) => source.subarray(start, endExclusive)
+  }
 }
 
 /** Write locally before scheduling remote synchronization. */
@@ -28,12 +53,7 @@ export async function persistStorageCanvasLocally(
     store: getLocalCanvasStore(),
     enqueueCanvas: enqueuePutCanvas
   }
-  const thumbnailBytes = await extractFigThumbnailFromReader({
-    size: options.figBytes.byteLength,
-    async read(start, endExclusive) {
-      return options.figBytes.subarray(start, endExclusive)
-    }
-  })
+  const thumbnailBytes = await extractFigThumbnailFromReader(byteRangeReader(options.figBytes))
   const metadata = await runtime.store.writeCanvas({
     id: options.canvasId,
     providerId: options.providerId,
@@ -56,7 +76,7 @@ export type SeedStorageCanvasOptions = {
   canvasId: string
   name: string
   updatedAt: string
-  figBytes: Uint8Array
+  figBytes: Uint8Array | Blob
   thumbnailBytes?: Uint8Array | null
   markSynced?: boolean
 }

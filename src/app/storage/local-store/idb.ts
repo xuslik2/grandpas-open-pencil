@@ -81,11 +81,16 @@ export function createIdbLocalCanvasStore(): LocalCanvasStore {
       const existing = (await metaStore.get(input.id)) ?? null
 
       let hasThumb = existing?.hasThumb ?? false
-      await figStore.put(Uint8Array.from(input.figBytes), input.id)
+      // Stored as given. Uint8Array.from() on a Uint8Array walks it
+      // element by element — 163 million iterations for the document
+      // that exposed this — and allocates a second full copy that
+      // IndexedDB then structured-clones anyway. A Blob is stored by
+      // reference and never materialised here at all.
+      await figStore.put(input.figBytes, input.id)
 
       if (input.thumbBytes != null) {
         if (input.thumbBytes.byteLength > 0) {
-          await thumbStore.put(Uint8Array.from(input.thumbBytes), input.id)
+          await thumbStore.put(input.thumbBytes, input.id)
           hasThumb = true
         } else {
           await thumbStore.delete(input.id)

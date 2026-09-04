@@ -38,7 +38,13 @@ export type LocalCanvasWriteInput = {
   providerId: StorageProviderID
   name: string
   updatedAt?: string
-  figBytes: Uint8Array
+  /**
+   * A Blob is preferred for anything large. IndexedDB stores Blobs by
+   * reference and can back them with disk, whereas a Uint8Array is
+   * structured-cloned into memory on every write — a full document-size
+   * allocation each time a document is cached.
+   */
+  figBytes: Uint8Array | Blob
   thumbBytes?: Uint8Array | null
   /** If set, keep this revision; otherwise increment from existing. */
   revision?: number

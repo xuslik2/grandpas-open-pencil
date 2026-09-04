@@ -52,6 +52,16 @@ export async function apiGetBytes(path: string): Promise<Uint8Array | null> {
   return new Uint8Array(await res.arrayBuffer())
 }
 
+// Returns the response body as a Blob — never materialised on the JS
+// heap, unlike arrayBuffer(). For a large document that difference is a
+// full document-size allocation that nothing ever needed.
+export async function apiGetBlob(path: string): Promise<Blob | null> {
+  const res = await fetch(`/api${path}`, { credentials: 'include' })
+  if (res.status === 404) return null
+  if (!res.ok) return parseError(res)
+  return res.blob()
+}
+
 export async function apiPutBytes(path: string, bytes: Uint8Array): Promise<Response> {
   return fetch(`/api${path}`, {
     method: 'PUT',
