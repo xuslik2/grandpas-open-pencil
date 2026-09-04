@@ -5,6 +5,7 @@ import { exportFigDocument } from '@open-pencil/core/io/formats/fig'
 import type { SceneGraph } from '@open-pencil/scene-graph'
 
 import { teamIdForDocument, uploadDocumentAssets } from '@/app/integrations/storage/hosted/assets'
+import { HostedApiError } from '@/app/integrations/storage/hosted/client'
 import type { StorageDocumentBinding } from '@/app/integrations/storage/types'
 
 /**
@@ -60,12 +61,32 @@ export async function exportDocumentForStorage({
   })
 
   if (separateImages && binding && !skipAssetUpload) {
-    // Before the document that references them, deliberately. A saved
-    // document pointing at images the server doesn't hold yet would
-    // render with holes for anyone who opened it in between.
-    const teamId = await teamIdForDocument(binding.documentId)
-    await uploadDocumentAssets(graph, teamId, imageHashes)
+    try {
+      // Before the document that references them, deliberately. A saved
+      // document pointing at images the server doesn't hold yet would
+      // render with holes for anyone who opened it in between.
+      const teamId = await teamIdForDocument(binding.documentId)
+      await uploadDocumentAssets(graph, teamId, imageHashes)
+    } catch (error) {
+      if (!isAssetStorageUnavailable(error)) throw error
+      // Talking to a server that predates asset storage. Fall back to a
+      // complete, self-contained archive: more expensive to build, but a
+      // save that works beats a save that's cheap, and it keeps this
+      // deployable independently of the server it talks to.
+      console.warn('[assets] asset storage unavailable; saving a full archive instead:', error)
+      const complete = await exportFigDocument(graph, {
+        ck,
+        renderer,
+        pageId,
+        excludeImages: false
+      })
+      return complete.bytes
+    }
   }
 
   return bytes
+}
+
+function isAssetStorageUnavailable(error: unknown): boolean {
+  return error instanceof HostedApiError && (error.status === 404 || error.status === 405)
 }
