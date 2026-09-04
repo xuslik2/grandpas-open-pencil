@@ -92,7 +92,17 @@ export function registerOriginalArchiveRequest(
 export async function requestOriginalArchive(graph: SceneGraph): Promise<Uint8Array | null> {
   const entry = originalArchiveRequests.get(graph)
   if (!entry?.valid) return null
-  const archive = await entry.request()
+  // A pass-through of the untouched original is only ever an optimisation
+  // over re-encoding the graph, so a session that can no longer produce
+  // one (worker disposed, archive released) degrades to null rather than
+  // failing the caller's export outright.
+  let archive: Uint8Array
+  try {
+    archive = await entry.request()
+  } catch (error) {
+    console.warn('Original .fig archive unavailable, re-encoding instead:', error)
+    return null
+  }
   return originalArchiveRequests.get(graph)?.valid === true &&
     originalArchiveRequests.get(graph) === entry
     ? archive

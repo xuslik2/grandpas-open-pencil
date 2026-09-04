@@ -42,7 +42,18 @@ function populate(request: Extract<FigSessionRequest, { type: 'populate' }>): vo
 function handleRequest(request: FigSessionRequest): void {
   try {
     if (request.type === 'original-archive') {
-      if (!originalArchive) throw new Error('FIG session has no original archive')
+      // Answered on its own response type rather than through the generic
+      // error path below: that one carries no requestId for this request
+      // kind, so a failure there would leave the caller's promise pending
+      // forever instead of letting export fall back to re-encoding.
+      if (!originalArchive) {
+        port?.postMessage({
+          type: 'original-archive-result',
+          requestId: request.requestId,
+          error: 'FIG session has no original archive'
+        })
+        return
+      }
       const bytes = originalArchive.slice()
       port?.postMessage({ type: 'original-archive-result', requestId: request.requestId, bytes }, [
         bytes.buffer

@@ -59,6 +59,6 @@ export type FigSessionResponse =
       delta: FigPopulationDelta
     }
   | { type: 'population-error'; requestId?: string; error: string }
-  | { type: 'original-archive-result'; requestId: string; bytes: Uint8Array }
+  | { type: 'original-archive-result'; requestId: string; bytes?: Uint8Array; error?: string }
   | { type: 'images-result'; requestId: string; images: Array<[string, Uint8Array]> }
   | { type: 'disposed' }

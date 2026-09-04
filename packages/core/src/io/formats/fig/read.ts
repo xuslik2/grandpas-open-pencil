@@ -43,7 +43,10 @@ function parseViaWorker(
     options.signal?.throwIfAborted()
     const worker = createFigSessionWorker()
     const channel = new MessageChannel()
-    const pendingArchives = new Map<string, (bytes: Uint8Array) => void>()
+    const pendingArchives = new Map<
+      string,
+      { resolve: (bytes: Uint8Array) => void; reject: (error: Error) => void }
+    >()
     const pendingImages = new Map<string, (images: Array<[string, Uint8Array]>) => void>()
     const abort = () => {
       channel.port1.postMessage({ type: 'dispose' })
@@ -55,6 +58,19 @@ function parseViaWorker(
     const cleanupAbort = () => options.signal?.removeEventListener('abort', abort)
 
     channel.port1.onmessage = (e: MessageEvent<FigSessionResponse>) => {
+      // Without this branch the reply falls through the `!== 'graph'`
+      // guard below and is silently dropped, leaving the promise
+      // registered by registerOriginalArchiveRequest pending forever —
+      // which hangs every save of an imported document, since export
+      // awaits the original archive before anything else.
+      if (e.data.type === 'original-archive-result') {
+        const pending = pendingArchives.get(e.data.requestId)
+        if (!pending) return
+        pendingArchives.delete(e.data.requestId)
+        if (e.data.bytes) pending.resolve(e.data.bytes)
+        else pending.reject(new Error(e.data.error ?? 'Worker failed to return original archive'))
+        return
+      }
       if (e.data.type === 'images-result') {
         const resolveImages = pendingImages.get(e.data.requestId)
         if (!resolveImages) return
@@ -82,9 +98,12 @@ function parseViaWorker(
           registerOriginalArchiveRequest(
             graph,
             () =>
-              new Promise<Uint8Array>((resolveArchive) => {
+              new Promise<Uint8Array>((resolveArchive, rejectArchive) => {
                 const requestId = randomHex()
-                pendingArchives.set(requestId, resolveArchive)
+                pendingArchives.set(requestId, {
+                  resolve: resolveArchive,
+                  reject: rejectArchive
+                })
                 channel.port1.postMessage({ type: 'original-archive', requestId })
               })
           )
