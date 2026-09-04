@@ -120,17 +120,35 @@ function handleRequest(request: FigSessionRequest): void {
 }
 
 self.onmessage = (event: MessageEvent<FigSessionOpenRequest>) => {
-  const request = event.data
+  void openSession(event.data)
+}
+
+async function openSession(request: FigSessionOpenRequest): Promise<void> {
   port = request.port
   port.onmessage = (message: MessageEvent<FigSessionRequest>) => handleRequest(message.data)
   port.start()
-  // A view over the transferred buffer, not a copy — parseFigBuffer below
-  // only reads from it, so it's safe for both to reference the same bytes.
-  originalArchive = new Uint8Array(request.buffer)
+
+  // Reading the Blob happens here rather than on the main thread, which
+  // is the point of accepting one: the file's bytes are materialised
+  // only inside this worker.
+  let buffer: ArrayBuffer
+  try {
+    buffer = request.buffer ?? (await request.file!.arrayBuffer())
+  } catch (error) {
+    respond({
+      type: 'graph',
+      error: error instanceof Error ? error.message : String(error)
+    })
+    return
+  }
+
+  // A view over the buffer, not a copy — parseFigBuffer below only reads
+  // from it, so it's safe for both to reference the same bytes.
+  originalArchive = new Uint8Array(buffer)
   const isFirstPageOpen = request.options?.populate === 'first-page'
   try {
     const { nodeChanges, blobs, images, figKiwiVersion, figSchemaDeflated } = parseFigBuffer(
-      request.buffer,
+      buffer,
       (pages) => respond({ type: 'page-manifest', pages }),
       { limitToFirstPage: isFirstPageOpen }
     )

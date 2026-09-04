@@ -35,7 +35,7 @@ function parseFigFileSync(buffer: ArrayBuffer, options: ParseFigFileOptions = {}
 }
 
 function parseViaWorker(
-  buffer: ArrayBuffer,
+  source: ArrayBuffer | Blob,
   options: ParseFigFileOptions,
   transferOwnership = false
 ): Promise<SceneGraph> {
@@ -136,22 +136,37 @@ function parseViaWorker(
       worker.terminate()
       reject(new Error(err.message || 'Worker failed to parse .fig file'))
     }
-    // One copy, transferred (not cloned) to the worker — it both parses
-    // from this buffer and retains it as the archive snapshot. Sending two
-    // independent duplicates here used to double the peak memory cost for
-    // every file open, which mattered a lot for large (100MB+) .fig files.
-    // transferOwnership skips even this one remaining copy when the
-    // caller doesn't need `buffer` to stay valid afterward (readFigFile:
-    // it can just re-read the file fresh on the rare worker failure,
-    // instead of always paying for a spare copy just in case).
-    const transferBuffer = transferOwnership ? buffer : buffer.slice(0)
-    const request: FigSessionOpenRequest = {
-      type: 'open',
-      buffer: transferBuffer,
-      options: { populate: options.populate },
-      port: channel.port2
+    if (source instanceof ArrayBuffer) {
+      // One copy, transferred (not cloned) to the worker — it both parses
+      // from this buffer and retains it as the archive snapshot. Sending two
+      // independent duplicates here used to double the peak memory cost for
+      // every file open, which mattered a lot for large (100MB+) .fig files.
+      // transferOwnership skips even this one remaining copy when the
+      // caller doesn't need `buffer` to stay valid afterward (readFigFile:
+      // it can just re-read the file fresh on the rare worker failure,
+      // instead of always paying for a spare copy just in case).
+      const transferBuffer = transferOwnership ? source : source.slice(0)
+      const request: FigSessionOpenRequest = {
+        type: 'open',
+        buffer: transferBuffer,
+        options: { populate: options.populate },
+        port: channel.port2
+      }
+      worker.postMessage(request, [transferBuffer, channel.port2])
+    } else {
+      // Better still: hand over the Blob itself. Structured clone passes
+      // it by reference, so the file's bytes are only ever materialised
+      // inside the worker — the main thread, which has to stay
+      // responsive while a large document opens, never allocates them at
+      // all.
+      const request: FigSessionOpenRequest = {
+        type: 'open',
+        file: source,
+        options: { populate: options.populate },
+        port: channel.port2
+      }
+      worker.postMessage(request, [channel.port2])
     }
-    worker.postMessage(request, [transferBuffer, channel.port2])
   })
 }
 
@@ -185,22 +200,18 @@ export async function readFigFile(
   options: ParseFigFileOptions = {}
 ): Promise<SceneGraph> {
   options.signal?.throwIfAborted()
-  const buffer = await file.arrayBuffer()
-  options.signal?.throwIfAborted()
 
   if (typeof Worker === 'undefined' || !IS_BROWSER) {
-    return parseFigFileSync(buffer, options)
+    return parseFigFileSync(await file.arrayBuffer(), options)
   }
 
   try {
-    // Transfers `buffer` itself to the worker (no spare copy) — unlike
-    // parseFigFile's usual safety copy, readFigFile can just re-read the
-    // file fresh below if the worker fails, since it still has `file`.
-    // For a single very large file, reading it is already a big
-    // allocation on its own; routinely doubling that "just in case" made
-    // large opens more likely to hit memory limits well below what the
-    // system actually has available.
-    return await parseViaWorker(buffer, options, true)
+    // The File goes to the worker as-is. Reading it into an ArrayBuffer
+    // here first would put the entire document on the main thread —
+    // 163MB, for the file that motivated this — purely to hand it
+    // straight to another thread, and it would stay there for as long as
+    // the open takes. The worker reads the Blob itself instead.
+    return await parseViaWorker(file, options)
   } catch (error) {
     if (options.signal?.aborted) throw error
     console.warn('Worker parsing failed, falling back to main thread:', error)

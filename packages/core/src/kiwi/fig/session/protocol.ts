@@ -6,10 +6,22 @@ import type { FigPopulationDelta } from '#core/kiwi/fig/population/delta'
 
 export interface FigSessionOpenRequest {
   type: 'open'
-  // Single buffer, both parsed from and retained as the archive snapshot —
-  // parsing only reads it, so one copy safely serves both purposes instead
-  // of transferring two independent duplicates of a potentially huge file.
-  buffer: ArrayBuffer
+  /**
+   * Exactly one of `file` or `buffer`.
+   *
+   * `file` is what the browser should use. A Blob is structured-cloned by
+   * reference, so handing one to the worker costs nothing and the main
+   * thread never materialises the document at all — whereas reading it
+   * into an ArrayBuffer first means a full file-size allocation (163MB,
+   * for the document that motivated this) on the one thread that has to
+   * stay responsive while the file opens.
+   *
+   * Either way the worker both parses from these bytes and retains them
+   * as the archive snapshot; parsing only reads, so one copy safely
+   * serves both purposes.
+   */
+  file?: Blob
+  buffer?: ArrayBuffer
   options?: FigImportOptions
   port: MessagePort
 }
