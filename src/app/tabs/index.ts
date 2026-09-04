@@ -440,9 +440,15 @@ export async function openStorageDocumentInNewTab(document: StorageDocument): Pr
       load.signal.throwIfAborted()
     }
 
-    const fileBytes = new Uint8Array(bytes.byteLength)
-    fileBytes.set(bytes)
-    const file = new File([fileBytes.buffer], `${document.name}.fig`, {
+    // Built straight from `bytes`. Copying into a second Uint8Array first
+    // bought nothing — File already copies its input into blob storage —
+    // and cost another full document-size allocation, back to back with
+    // the fetch buffer and the IndexedDB clone. A trace of this path
+    // opening a 163MB document showed the main thread stalling 12s in
+    // exactly that burst and the renderer then being killed, with the JS
+    // heap only at 200MB of a 4096MB limit: large buffers live off-heap,
+    // so what ran out was process memory, not the heap.
+    const file = new File([bytes], `${document.name}.fig`, {
       type: 'application/octet-stream'
     })
     load.update({ phase: 'decoding', detail: document.name })
