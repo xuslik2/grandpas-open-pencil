@@ -13,6 +13,14 @@ type SaveDocumentState = EditorState & { documentName: string }
 type SaveActionsOptions = Omit<DocumentSourceAccess, 'getSavedVersion'> & {
   state: SaveDocumentState
   buildFigFile: () => Uint8Array | Promise<Uint8Array>
+  /**
+   * A complete, self-contained .fig — images included — regardless of
+   * how the document's own storage keeps them. Anything that leaves
+   * this app (a download, a Save As onto disk) has to use this: hosted
+   * storage holds images separately, so its archive on its own would
+   * open elsewhere with every image missing.
+   */
+  buildPortableFigFile: () => Uint8Array | Promise<Uint8Array>
   startWatchingFile: () => void
   onWriteSuccess?: (version: number) => void | Promise<void>
   onDownloadSuccess?: (version: number) => void | Promise<void>
@@ -21,6 +29,7 @@ type SaveActionsOptions = Omit<DocumentSourceAccess, 'getSavedVersion'> & {
 export function createSaveActions({
   state,
   buildFigFile,
+  buildPortableFigFile,
   getFilePath,
   setFilePath,
   getFileHandle,
@@ -51,6 +60,11 @@ export function createSaveActions({
     return { data: await buildFigFile(), version }
   }
 
+  async function buildVersionedPortableFigFile() {
+    const version = state.sceneVersion
+    return { data: await buildPortableFigFile(), version }
+  }
+
   async function saveFigFile() {
     const filePath = getFilePath()
     const fileHandle = getFileHandle()
@@ -61,7 +75,7 @@ export function createSaveActions({
       const wrote = await writeFile(data, version)
       if (wrote && !storageBinding) setSourceIdentity({ handle: fileHandle, path: filePath })
     } else if (downloadName) {
-      const { data, version } = await buildVersionedFigFile()
+      const { data, version } = await buildVersionedPortableFigFile()
       downloadBlob(new Uint8Array(data), downloadName, 'application/octet-stream')
       await onDownloadSuccess?.(version)
     } else {
@@ -70,7 +84,7 @@ export function createSaveActions({
   }
 
   async function saveFigFileAs() {
-    const { data, version } = await buildVersionedFigFile()
+    const { data, version } = await buildVersionedPortableFigFile()
 
     if (IS_TAURI) {
       const path = await chooseTauriFigSavePath()

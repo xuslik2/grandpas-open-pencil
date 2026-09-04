@@ -59,6 +59,21 @@ export function createDocumentSourceActions({
     })
   }
 
+  // Everything that hands a .fig to somewhere outside this app — a
+  // download, Save As onto disk — needs the images in it, even when the
+  // document's own storage keeps them separately. Otherwise the file
+  // opens elsewhere with every image missing.
+  function buildPortableFigFile() {
+    const renderer = getRenderer()
+    return exportDocumentForStorage({
+      graph: editor.graph,
+      binding: null,
+      ck: renderer?.ck,
+      renderer: renderer ?? undefined,
+      pageId: state.currentPageId
+    })
+  }
+
   function buildRecoveryFigFile() {
     // Same small archive as a real save when the document's images live
     // on the server, but without uploading anything — a recovery
@@ -81,6 +96,7 @@ export function createDocumentSourceActions({
   const { saveFigFile, saveFigFileAs, writeFile } = createSaveActions({
     state,
     buildFigFile,
+    buildPortableFigFile,
     getFilePath,
     setFilePath,
     getFileHandle,
