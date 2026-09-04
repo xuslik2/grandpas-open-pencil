@@ -9,6 +9,11 @@ import type {
   EditorPreparationUpdate
 } from '@/app/editor/preparation/types'
 import type { AppEditorState } from '@/app/editor/session/types'
+import {
+  beginOpenTrace,
+  endOpenTrace,
+  markOpenTracePhase
+} from '@/app/diagnostics/open-trace'
 
 const PRESENTATION_TIMEOUT_MS = 10_000
 
@@ -59,6 +64,7 @@ export function createEditorPreparationController(
         startedAt: performance.now()
       }
       events?.emit('preparation:started', state.preparation)
+      beginOpenTrace({ kind, subject: options.subject ?? null, fileBytes: options.fileBytes ?? null })
 
       const clear = () => {
         presentationWaiters.get(id)?.resolve()
@@ -70,6 +76,7 @@ export function createEditorPreparationController(
 
       const cancel = (reason: EditorPreparationCancelReason = 'user') => {
         if (!isActive(id)) return
+        endOpenTrace('cancelled')
         abort.abort()
         clear()
         events?.emit('preparation:finished', { id, kind, status: 'cancelled', reason })
@@ -101,15 +108,18 @@ export function createEditorPreparationController(
                 }
               : null
           }
+          markOpenTracePhase(update.phase, update.detail ?? null)
           events?.emit('preparation:updated', state.preparation, previous)
         },
         complete() {
           if (!isActive(id)) return
+          endOpenTrace('completed')
           clear()
           events?.emit('preparation:finished', { id, kind, status: 'completed' })
         },
         fail(failure) {
           if (!isActive(id)) return
+          endOpenTrace('failed', failure.message)
           const event: EditorPreparationFailure = { id, kind, ...failure }
           clear()
           events?.emit('preparation:failed', event)

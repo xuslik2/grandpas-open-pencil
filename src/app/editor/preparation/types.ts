@@ -37,6 +37,8 @@ export interface BeginEditorPreparation {
   kind: EditorPreparationKind
   phase?: EditorPreparationPhase
   subject?: string | null
+  /** Recorded in the open trace, to correlate cost with document size. */
+  fileBytes?: number | null
 }
 
 export interface EditorPreparationUpdate {

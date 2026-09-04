@@ -6,6 +6,7 @@ import { teamRoutes } from './routes/teams.js'
 import { projectRoutes, folderRoutes } from './routes/projects.js'
 import { documentRoutes } from './routes/documents.js'
 import { assetRoutes } from './routes/assets.js'
+import { diagnosticRoutes } from './routes/diagnostics.js'
 
 const app = new Hono().basePath('/api')
 
@@ -27,6 +28,7 @@ app.route('/documents', documentRoutes)
 // Mounted under /teams so the routes read /api/teams/:teamId/assets/:hash —
 // assets are team-scoped, same as everything else they belong to.
 app.route('/teams', assetRoutes)
+app.route('/diagnostics', diagnosticRoutes)
 
 const port = Number(process.env.PORT ?? 3000)
 serve({ fetch: app.fetch, port }, (info) => {

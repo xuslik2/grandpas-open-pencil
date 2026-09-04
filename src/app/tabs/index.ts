@@ -535,7 +535,8 @@ export async function openFileInNewTab(
     store.state.documentName = file.name.replace(/\.[^.]+$/i, '')
     const load = store.preparationController.begin({
       kind: isDOMImportFile(file) ? 'dom-import' : 'document-open',
-      subject: file.name
+      subject: file.name,
+      fileBytes: file.size
     })
 
     const completion = Promise.withResolvers<undefined>()
