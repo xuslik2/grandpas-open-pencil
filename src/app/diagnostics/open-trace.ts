@@ -99,7 +99,6 @@ export function beginOpenTrace(options: {
   currentPhase = 'starting'
   currentDetail = options.subject
   sample()
-  timer?.unref?.()
   if (timer) clearInterval(timer)
   timer = setInterval(sample, SAMPLE_INTERVAL_MS)
 }
