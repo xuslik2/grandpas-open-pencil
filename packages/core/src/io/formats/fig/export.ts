@@ -448,8 +448,14 @@ export async function exportFigFile(
   pageId?: string,
   renderHeadlessThumbnail = false
 ): Promise<Uint8Array> {
+  // Returned as-is, not copied: originalFigArchive's contract is that
+  // providers hand back a freshly allocated buffer this caller owns (see
+  // original-archive.ts). Copying it here meant every passthrough save
+  // held two full copies of the file at once — 326MB of contiguous
+  // allocation for a 163MB document, on top of the loaded document
+  // itself, which is enough to take the renderer down.
   const originalArchive = await originalFigArchive(sourceGraph)
-  if (originalArchive) return originalArchive.slice()
+  if (originalArchive) return originalArchive
   const graph = cloneSceneGraphForFigExport(sourceGraph)
   populateAllLazyFigImportRoots(graph)
 
