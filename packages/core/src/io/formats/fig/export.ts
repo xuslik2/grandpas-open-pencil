@@ -441,6 +441,28 @@ function appendInternalResources(context: InternalResourceContext): void {
   }
 }
 
+export interface FigExportOptions {
+  ck?: CanvasKit
+  renderer?: SkiaRenderer
+  pageId?: string
+  renderHeadlessThumbnail?: boolean
+  /**
+   * Build the archive without its images/ entries, reporting the hashes
+   * it would have embedded instead. For storage that holds images
+   * separately (content-addressed), this is the difference between an
+   * export that materialises every image in the document — 155MB for a
+   * real file here, copied again into the compression worker — and one
+   * that only ever touches the ~140KB of design data.
+   */
+  excludeImages?: boolean
+}
+
+export interface FigExportResult {
+  bytes: Uint8Array
+  /** Every image hash the document's fills reference. */
+  imageHashes: string[]
+}
+
 export async function exportFigFile(
   sourceGraph: SceneGraph,
   ck?: CanvasKit,
@@ -448,29 +470,59 @@ export async function exportFigFile(
   pageId?: string,
   renderHeadlessThumbnail = false
 ): Promise<Uint8Array> {
-  // Returned as-is, not copied: originalFigArchive's contract is that
-  // providers hand back a freshly allocated buffer this caller owns (see
-  // original-archive.ts). Copying it here meant every passthrough save
-  // held two full copies of the file at once — 326MB of contiguous
-  // allocation for a 163MB document, on top of the loaded document
-  // itself, which is enough to take the renderer down.
-  const originalArchive = await originalFigArchive(sourceGraph)
-  if (originalArchive) return originalArchive
+  const { bytes } = await exportFigDocument(sourceGraph, {
+    ck,
+    renderer,
+    pageId,
+    renderHeadlessThumbnail
+  })
+  return bytes
+}
+
+export async function exportFigDocument(
+  sourceGraph: SceneGraph,
+  options: FigExportOptions = {}
+): Promise<FigExportResult> {
+  const { ck, renderer, pageId, renderHeadlessThumbnail = false, excludeImages = false } = options
+
+  // The passthrough hands back the source .fig byte-for-byte, images
+  // included, so it can't serve an images-excluded export — that caller
+  // needs the archive actually rebuilt without them.
+  if (!excludeImages) {
+    // Returned as-is, not copied: originalFigArchive's contract is that
+    // providers hand back a freshly allocated buffer this caller owns (see
+    // original-archive.ts). Copying it here meant every passthrough save
+    // held two full copies of the file at once — 326MB of contiguous
+    // allocation for a 163MB document, on top of the loaded document
+    // itself, which is enough to take the renderer down.
+    const originalArchive = await originalFigArchive(sourceGraph)
+    if (originalArchive) {
+      return { bytes: originalArchive, imageHashes: [...collectImageHashes(sourceGraph)] }
+    }
+  }
+
   const graph = cloneSceneGraphForFigExport(sourceGraph)
   populateAllLazyFigImportRoots(graph)
 
-  // A large file opened with only some pages' images actually loaded
-  // (see image-refs.ts / population/client.ts) needs the rest fetched
-  // before a real (non-original-archive-passthrough) export — every
-  // page just got fully populated above, so this is the complete set of
-  // images the encoded output actually needs. Cached onto sourceGraph
-  // too so a later export of the same document doesn't refetch them.
   const neededImageHashes = collectImageHashes(graph)
-  await ensureImagesLoaded(sourceGraph, sourceGraph.images, neededImageHashes)
-  for (const hash of neededImageHashes) {
-    if (graph.images.has(hash)) continue
-    const data = sourceGraph.images.get(hash)
-    if (data) graph.images.set(hash, data)
+
+  // Skipped entirely when the images aren't going into the archive:
+  // this is the fetch that pulls every image in the document onto the
+  // main thread (and caches them there permanently), which is precisely
+  // the cost content-addressed storage exists to avoid paying on save.
+  if (!excludeImages) {
+    // A large file opened with only some pages' images actually loaded
+    // (see image-refs.ts / population/client.ts) needs the rest fetched
+    // before a real (non-original-archive-passthrough) export — every
+    // page just got fully populated above, so this is the complete set of
+    // images the encoded output actually needs. Cached onto sourceGraph
+    // too so a later export of the same document doesn't refetch them.
+    await ensureImagesLoaded(sourceGraph, sourceGraph.images, neededImageHashes)
+    for (const hash of neededImageHashes) {
+      if (graph.images.has(hash)) continue
+      const data = sourceGraph.images.get(hash)
+      if (data) graph.images.set(hash, data)
+    }
   }
 
   await initCodec()
@@ -645,13 +697,14 @@ export async function exportFigFile(
     createdAt: new Date().toISOString()
   })
 
-  const imageEntries = collectImageEntries(graph)
+  const imageEntries = excludeImages ? [] : collectImageEntries(graph)
+  const imageHashes = [...neededImageHashes]
 
   const version = graph.figKiwiVersion ?? undefined
 
   if (IS_TAURI) {
     const { invoke } = await import('@tauri-apps/api/core')
-    return new Uint8Array(
+    const bytes = new Uint8Array(
       await invoke<ArrayBuffer>('build_fig_file', {
         schemaDeflated: Array.from(schemaDeflated),
         kiwiData: Array.from(kiwiData),
@@ -661,9 +714,18 @@ export async function exportFigFile(
         figKiwiVersion: version
       })
     )
+    return { bytes, imageHashes }
   }
 
-  return compressFigData(schemaDeflated, kiwiData, thumbnailPNG, metaJSON, imageEntries, version)
+  const bytes = await compressFigData(
+    schemaDeflated,
+    kiwiData,
+    thumbnailPNG,
+    metaJSON,
+    imageEntries,
+    version
+  )
+  return { bytes, imageHashes }
 }
 
 export { compressFigDataSync } from '@open-pencil/fig'

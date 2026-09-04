@@ -28,6 +28,10 @@ import {
 import { IS_TAURI } from '@/constants'
 import { registerPendingProject } from '@/app/integrations/storage/hosted/default-project'
 import {
+  registerHostedImageSource,
+  teamIdForDocument
+} from '@/app/integrations/storage/hosted/assets'
+import {
   cacheRecentFileThumbnail,
   loadCachedRecentFileThumbnail,
   rememberRecentStorageDocument
@@ -443,6 +447,22 @@ export async function openStorageDocumentInNewTab(document: StorageDocument): Pr
     })
     load.update({ phase: 'decoding', detail: document.name })
     const imported = await readFigForTab(file, load.signal)
+
+    // Documents saved to hosted storage carry no images in their archive
+    // — they live in the team's content-addressed asset store. Wiring
+    // that up has to happen before the graph is shown, because showing it
+    // switches to a page, and that's what asks for the page's images.
+    if (providerId === 'hosted-server') {
+      try {
+        registerHostedImageSource(imported, await teamIdForDocument(document.id))
+      } catch (error) {
+        // Non-fatal: a document whose images can't be located still opens
+        // and edits, it just renders those fills empty.
+        console.warn('[assets] could not attach hosted image source:', error)
+      }
+    }
+    load.signal.throwIfAborted()
+
     await showImportedGraph(
       store,
       imported,

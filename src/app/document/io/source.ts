@@ -1,5 +1,5 @@
 import type { Editor, EditorState } from '@open-pencil/core/editor'
-import { exportFigFile } from '@open-pencil/core/io/formats/fig'
+import { exportDocumentForStorage } from '@/app/document/io/export-for-storage'
 
 import { createAutosave } from '@/app/document/autosave'
 import {
@@ -50,11 +50,25 @@ export function createDocumentSourceActions({
 }: DocumentSourceOptions) {
   function buildFigFile() {
     const renderer = getRenderer()
-    return exportFigFile(editor.graph, renderer?.ck, renderer ?? undefined, state.currentPageId)
+    return exportDocumentForStorage({
+      graph: editor.graph,
+      binding: getStorageBinding(),
+      ck: renderer?.ck,
+      renderer: renderer ?? undefined,
+      pageId: state.currentPageId
+    })
   }
 
   function buildRecoveryFigFile() {
-    return exportFigFile(editor.graph, undefined, undefined, state.currentPageId)
+    // Same small archive as a real save when the document's images live
+    // on the server, but without uploading anything — a recovery
+    // snapshot has to work when the network is exactly what broke.
+    return exportDocumentForStorage({
+      graph: editor.graph,
+      binding: getStorageBinding(),
+      pageId: state.currentPageId,
+      skipAssetUpload: true
+    })
   }
 
   const recovery = createDocumentRecovery({
