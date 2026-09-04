@@ -11,6 +11,14 @@ export function thumbnailObjectKey(documentId: string): string {
   return join('thumbnails', `${documentId}.jpg`)
 }
 
+// Content-addressed, so the same image embedded in twenty documents is
+// stored once. Callers validate the hash shape before this point; the
+// basename check is a second line against a traversal via the URL param.
+export function assetObjectKey(teamId: string, hash: string): string {
+  if (hash.includes('/') || hash.includes('..')) throw new Error('invalid asset hash')
+  return join('assets', teamId, hash)
+}
+
 function absolutePath(key: string): string {
   return join(DATA_DIR, key)
 }

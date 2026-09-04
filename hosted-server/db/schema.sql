@@ -94,3 +94,17 @@ create table favorites (
   created_at timestamptz not null default now(),
   primary key (user_id, document_id)
 );
+
+-- Content-addressed image blobs, kept out of the documents that
+-- reference them. A .fig is overwhelmingly images (155MB of images to
+-- 138KB of design, for the file that motivated this), so storing them
+-- per-revision made every autosave move the entire file. Immutable and
+-- keyed by the .fig's own image hash, so an unchanged image is uploaded
+-- once and shared by every later revision.
+create table assets (
+  team_id uuid not null references teams(id) on delete cascade,
+  hash text not null,
+  size_bytes bigint not null,
+  created_at timestamptz not null default now(),
+  primary key (team_id, hash)
+);

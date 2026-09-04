@@ -56,10 +56,14 @@ documentRoutes.get(
   '/:documentId',
   requireTeamRole('viewer', teamIdForDocument),
   async (c) => {
+    // team_id comes along because assets are addressed per team — a
+    // client that has just opened a document needs it to know where to
+    // fetch that document's images from.
     const { rows } = await pool.query(
-      `select id, project_id, folder_id, name, updated_at, revision,
-              (thumb_object_key is not null) as has_thumbnail
-         from documents where id = $1 and deleted_at is null`,
+      `select d.id, d.project_id, p.team_id, d.folder_id, d.name, d.updated_at, d.revision,
+              (d.thumb_object_key is not null) as has_thumbnail
+         from documents d join projects p on p.id = d.project_id
+        where d.id = $1 and d.deleted_at is null`,
       [c.req.param('documentId')]
     )
     if (!rows[0]) return c.json({ error: 'not found' }, 404)
