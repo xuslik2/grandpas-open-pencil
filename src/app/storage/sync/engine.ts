@@ -16,7 +16,8 @@ import { evictLocalFigCache, MAX_CACHEABLE_FIG_BYTES } from '@/app/storage/cache
 import {
   beginRiskyOperation,
   endRiskyOperation,
-  isQuarantined
+  isQuarantined,
+  releaseQuarantine
 } from '@/app/storage/crash-guard'
 import { getLocalCanvasStore } from '@/app/storage/local-store'
 import { getOutbox } from '@/app/storage/sync/outbox'
@@ -360,6 +361,9 @@ export async function enqueueDeleteCanvas(canvasId: string): Promise<void> {
 export async function resumeStorageSync(): Promise<void> {
   const outbox = getOutbox()
   const jobs = await outbox.list()
+  // An explicit retry has to lift the quarantine too, or the pump just
+  // re-parks every quarantined job and the button does nothing.
+  for (const job of jobs) releaseQuarantine(job.canvasId)
   const now = Date.now()
   await Promise.all(jobs.map((job) => outbox.update({ ...job, nextAttemptAt: now })))
   if (jobs.length > 0) setSyncUI('syncing')
