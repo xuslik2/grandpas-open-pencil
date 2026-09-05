@@ -16,12 +16,14 @@ export type LocalCanvasStore = {
   getMeta(id: string): Promise<LocalCanvasMeta | null>
   readFig(id: string): Promise<Uint8Array | null>
   /**
-   * The cached document as a Blob, without materialising it.
+   * The cached document as a Blob.
    *
-   * readFig allocates the whole document on the calling thread, which for
-   * a large file is enough to kill the renderer on its own — and the sync
-   * engine calls it on every startup for any pending upload, so one
-   * oversized pending row turns into a crash on every page load.
+   * For rows written as Blobs this hands back a handle and nothing is
+   * materialised. For rows written before that — plain Uint8Arrays —
+   * IndexedDB deserialises the whole value on get() and the Blob wrap
+   * copies it again, so those still cost roughly twice the document on
+   * the calling thread. Check meta.figSize before calling this on a row
+   * that might be large; see the size guard in sync/engine.ts.
    */
   readFigBlob(id: string): Promise<Blob | null>
   readThumb(id: string): Promise<Uint8Array | null>

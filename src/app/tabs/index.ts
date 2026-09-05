@@ -41,7 +41,8 @@ import { toast } from '@/app/shell/ui'
 import { getLocalCanvasStore } from '@/app/storage/local-store'
 import {
   beginRiskyOperation,
-  endRiskyOperation
+  endRiskyOperation,
+  releaseQuarantine
 } from '@/app/storage/crash-guard'
 import { seedStorageCanvasFromRemote } from '@/app/storage/sync/persist'
 import { onStorageWorkspaceEvent } from '@/app/storage/workspace/events'
@@ -414,6 +415,11 @@ export async function openStorageDocumentInNewTab(document: StorageDocument): Pr
   // than returning — see crash-guard.ts. Opening is user-initiated, so a
   // quarantined document is still allowed through here; the quarantine
   // only stops *automatic* work from retrying it.
+  // Opening it is the user asking for it, which is also the signal that
+  // its paused upload should be allowed to resume — otherwise a document
+  // quarantined once (including by a false positive) would stay unsyncable
+  // forever, since nothing else in the app can lift it.
+  releaseQuarantine(document.id)
   beginRiskyOperation({ kind: 'document-open', canvasId: document.id, label: document.name })
   try {
     load.update({ phase: 'reading', detail: document.name })

@@ -1,5 +1,18 @@
 import { getLocalCanvasStore } from '@/app/storage/local-store'
 
+/**
+ * Documents at or above this size are not cached on device, and a cached
+ * row this large is never read back on the main thread.
+ *
+ * Reading a cached document always materialises it on the calling thread,
+ * so past a certain size the on-device copy costs far more than the
+ * download it saves — and a pending upload of one is re-read at every page
+ * load, which is how a single oversized row turns into a crash on every
+ * load. The eviction budget below only trims *after* a write, which is too
+ * late for the write that kills the tab.
+ */
+export const MAX_CACHEABLE_FIG_BYTES = 64 * 1024 * 1024
+
 /** Keep at most this much cached fig data on device (metas/thumbs are tiny and stay). */
 export const FIG_CACHE_BUDGET_BYTES = 500 * 1024 * 1024
 

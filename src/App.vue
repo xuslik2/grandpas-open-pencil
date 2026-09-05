@@ -15,7 +15,7 @@ import { useEditorStore } from '@/app/editor/active-store'
 import { toast } from '@/app/shell/ui'
 import { useAppTheme } from '@/app/shell/theme'
 import { scheduleStartupUpdateCheck } from '@/app/shell/updater'
-import { lastClaimedCrash } from '@/app/storage/crash-guard'
+import { endRiskyOperation, lastClaimedCrash } from '@/app/storage/crash-guard'
 import { kickSyncEngine } from '@/app/storage/sync'
 import { prepareForReload } from '@/app/tabs'
 
@@ -30,6 +30,12 @@ useHead({
 provideEditor(store)
 useAppTheme()
 useEventListener(window, 'pagehide', () => {
+  // pagehide fires when the page goes away normally — reload, close,
+  // navigation — but not when the renderer is killed. Clearing the marker
+  // here is precisely what distinguishes the two, so reloading during a
+  // slow upload isn't mistaken for a crash and doesn't quarantine a
+  // perfectly healthy document.
+  endRiskyOperation()
   void prepareForReload()
 })
 

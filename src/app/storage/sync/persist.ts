@@ -1,7 +1,7 @@
 import { extractFigThumbnailFromReader } from '@open-pencil/fig'
 
 import type { StorageProviderID } from '@/app/integrations/storage/types'
-import { evictLocalFigCache } from '@/app/storage/cache-eviction'
+import { evictLocalFigCache, MAX_CACHEABLE_FIG_BYTES } from '@/app/storage/cache-eviction'
 import { getLocalCanvasStore } from '@/app/storage/local-store'
 import type { LocalCanvasStore } from '@/app/storage/local-store/store'
 import { enqueuePutCanvas } from '@/app/storage/sync/engine'
@@ -19,17 +19,6 @@ export type PersistStorageCanvasOptions = {
   figBytes: Uint8Array | Blob
 }
 
-/**
- * Documents at or above this size are not cached on device at all.
- *
- * The cache is an optimisation — it saves a download on reopen — but a
- * document this large costs far more than it saves: every read of it
- * allocates its full size on whichever thread asked, and a pending
- * upload of one re-reads it at every page load. The eviction budget
- * (cache-eviction.ts) only trims *after* the write has already happened,
- * which is too late for the write that kills the tab.
- */
-export const MAX_CACHEABLE_FIG_BYTES = 64 * 1024 * 1024
 
 function figByteLength(source: Uint8Array | Blob): number {
   return source instanceof Blob ? source.size : source.byteLength

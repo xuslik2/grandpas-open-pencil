@@ -12,7 +12,7 @@ import {
   storagePreferencesComplete,
   storageProviderRegistry
 } from '@/app/integrations/storage'
-import { evictLocalFigCache } from '@/app/storage/cache-eviction'
+import { evictLocalFigCache, MAX_CACHEABLE_FIG_BYTES } from '@/app/storage/cache-eviction'
 import {
   beginRiskyOperation,
   endRiskyOperation,
@@ -115,13 +115,30 @@ async function runJob(job: OutboxJob): Promise<void> {
       )
     }
 
-    // A Blob, not the bytes: readFig would allocate the whole document on
-    // this thread, and this runs on the main thread at startup.
-    const fig = await store.readFigBlob(job.canvasId)
-    if (!fig || fig.size === 0) throw new Error('Local document missing for sync')
-    setUploadProgress(job.canvasId, 0)
+    // Checked from metadata, before the row is touched. Reading a cached
+    // document always materialises it on this thread — readFigBlob only
+    // avoids that for rows *written* as Blobs, and rows written before
+    // that change are plain Uint8Arrays that IndexedDB deserialises in
+    // full on get(). This pump runs at every page load, so a row too big
+    // to read is a row that kills the tab on every load, forever. Parking
+    // it is the only safe move; the bytes stay on disk either way.
+    const cachedSize = meta.figSize ?? 0
+    if (cachedSize >= MAX_CACHEABLE_FIG_BYTES) {
+      throw new StorageSyncBlockedError(
+        `"${meta.name}" is ${Math.round(cachedSize / 1048576)}MB — too large to upload from the ` +
+          'browser. It is still on this device; re-open it and save again to sync it.'
+      )
+    }
+
+    // Before the read, deliberately. The read is itself capable of killing
+    // the renderer, so a marker written after it would never be on disk
+    // when that happens — the document would never be quarantined and the
+    // crash would repeat identically on every load.
     beginRiskyOperation({ kind: 'sync-upload', canvasId: job.canvasId, label: meta.name })
     try {
+      const fig = await store.readFigBlob(job.canvasId)
+      if (!fig || fig.size === 0) throw new Error('Local document missing for sync')
+      setUploadProgress(job.canvasId, 0)
       await adapter.putDocument(
         job.canvasId,
         fig,
