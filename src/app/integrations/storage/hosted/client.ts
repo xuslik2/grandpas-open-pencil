@@ -62,7 +62,7 @@ export async function apiGetBlob(path: string): Promise<Blob | null> {
   return res.blob()
 }
 
-export async function apiPutBytes(path: string, bytes: Uint8Array): Promise<Response> {
+export async function apiPutBytes(path: string, bytes: Uint8Array | Blob): Promise<Response> {
   return fetch(`/api${path}`, {
     method: 'PUT',
     credentials: 'include',

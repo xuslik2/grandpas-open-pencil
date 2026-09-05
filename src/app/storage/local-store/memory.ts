@@ -22,6 +22,11 @@ export function createMemoryLocalCanvasStore(): LocalCanvasStore {
       return bytes ? new Uint8Array(bytes) : null
     },
 
+    async readFigBlob(id: string) {
+      const row = figs.get(id)
+      return row ? new Blob([row]) : null
+    },
+
     async readThumb(id: string) {
       const bytes = thumbs.get(id)
       return bytes ? new Uint8Array(bytes) : null

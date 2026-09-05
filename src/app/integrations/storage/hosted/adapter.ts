@@ -60,7 +60,8 @@ export function createHostedStorageAdapter(): StorageAdapter {
       if (!bytes) throw new Error(`Document not found: ${id}`)
       // No granular progress for hosted storage yet — internal team files
       // aren't expected to be huge enough for this to matter today.
-      onProgress?.({ transferredBytes: bytes.length, totalBytes: bytes.length })
+      const size = bytes instanceof Blob ? bytes.size : bytes.length
+      onProgress?.({ transferredBytes: size, totalBytes: size })
       return bytes
     },
 
@@ -73,6 +74,7 @@ export function createHostedStorageAdapter(): StorageAdapter {
     },
 
     async putDocument(id, bytes, metadata, onProgress) {
+      const size = bytes instanceof Blob ? bytes.size : bytes.length
       let res = await apiPutBytes(`/documents/${id}/content`, bytes)
 
       if (res.status === 404) {
@@ -83,7 +85,7 @@ export function createHostedStorageAdapter(): StorageAdapter {
         const body = await res.json().catch(() => ({ error: res.statusText }))
         throw new HostedApiError(body.error ?? 'Failed to save document', res.status)
       }
-      onProgress?.({ transferredBytes: bytes.length, totalBytes: bytes.length })
+      onProgress?.({ transferredBytes: size, totalBytes: size })
 
       // Keep the stored name in sync in case the document was renamed
       // locally since it was last saved.

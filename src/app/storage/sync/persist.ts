@@ -20,6 +20,22 @@ export type PersistStorageCanvasOptions = {
 }
 
 /**
+ * Documents at or above this size are not cached on device at all.
+ *
+ * The cache is an optimisation — it saves a download on reopen — but a
+ * document this large costs far more than it saves: every read of it
+ * allocates its full size on whichever thread asked, and a pending
+ * upload of one re-reads it at every page load. The eviction budget
+ * (cache-eviction.ts) only trims *after* the write has already happened,
+ * which is too late for the write that kills the tab.
+ */
+export const MAX_CACHEABLE_FIG_BYTES = 64 * 1024 * 1024
+
+function figByteLength(source: Uint8Array | Blob): number {
+  return source instanceof Blob ? source.size : source.byteLength
+}
+
+/**
  * Random access over either form, without materialising a Blob.
  *
  * The thumbnail lives in the archive's central directory near the end of
@@ -54,6 +70,10 @@ export async function persistStorageCanvasLocally(
     enqueueCanvas: enqueuePutCanvas
   }
   const thumbnailBytes = await extractFigThumbnailFromReader(byteRangeReader(options.figBytes))
+  // No size ceiling here, deliberately: this body is a local save that
+  // hasn't reached the server yet, so the outbox needs it on disk to have
+  // anything to upload. The ceiling belongs on the download path
+  // (seedStorageCanvasFromRemote), where the server already holds a copy.
   const metadata = await runtime.store.writeCanvas({
     id: options.canvasId,
     providerId: options.providerId,
@@ -84,6 +104,28 @@ export type SeedStorageCanvasOptions = {
 export async function seedStorageCanvasFromRemote(
   options: SeedStorageCanvasOptions
 ): Promise<void> {
+  // Past a certain size the on-device copy costs more than the download it
+  // saves: reading it back allocates the whole document on whichever
+  // thread asks. The server has this content already, so skipping the body
+  // and keeping only the index row loses nothing but a re-download.
+  if (figByteLength(options.figBytes) >= MAX_CACHEABLE_FIG_BYTES) {
+    console.warn(
+      `[Storage] "${options.name}" is ` +
+        `${Math.round(figByteLength(options.figBytes) / 1048576)}MB — not caching it on device`
+    )
+    await getLocalCanvasStore().upsertIndexMeta({
+      id: options.canvasId,
+      providerId: options.providerId,
+      name: options.name,
+      updatedAt: options.updatedAt,
+      hasFig: false,
+      syncStatus: 'synced',
+      lastSyncedAt: options.updatedAt || null,
+      lastSyncError: null
+    })
+    return
+  }
+
   await getLocalCanvasStore().writeCanvas({
     id: options.canvasId,
     providerId: options.providerId,

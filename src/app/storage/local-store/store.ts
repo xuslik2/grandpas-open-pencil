@@ -15,6 +15,15 @@ export type LocalCanvasStore = {
   listMetas(includeTombstones?: boolean): Promise<LocalCanvasMeta[]>
   getMeta(id: string): Promise<LocalCanvasMeta | null>
   readFig(id: string): Promise<Uint8Array | null>
+  /**
+   * The cached document as a Blob, without materialising it.
+   *
+   * readFig allocates the whole document on the calling thread, which for
+   * a large file is enough to kill the renderer on its own — and the sync
+   * engine calls it on every startup for any pending upload, so one
+   * oversized pending row turns into a crash on every page load.
+   */
+  readFigBlob(id: string): Promise<Blob | null>
   readThumb(id: string): Promise<Uint8Array | null>
   writeCanvas(input: LocalCanvasWriteInput): Promise<LocalCanvasMeta>
   /** Index-only row for remote canvases not yet downloaded (no fig body). */

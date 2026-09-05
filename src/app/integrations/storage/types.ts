@@ -88,7 +88,12 @@ export interface StorageAdapter {
   ): Promise<Blob>
   putDocument(
     id: string,
-    bytes: Uint8Array,
+    /**
+     * A Blob is preferred and is what the sync engine sends: it uploads
+     * straight from storage without the document ever being allocated on
+     * the calling thread.
+     */
+    bytes: Uint8Array | Blob,
     metadata: StorageDocumentMetadata,
     onProgress?: (progress: StorageTransferProgress) => void
   ): Promise<void>

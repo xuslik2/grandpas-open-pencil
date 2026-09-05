@@ -15,6 +15,7 @@ import { useEditorStore } from '@/app/editor/active-store'
 import { toast } from '@/app/shell/ui'
 import { useAppTheme } from '@/app/shell/theme'
 import { scheduleStartupUpdateCheck } from '@/app/shell/updater'
+import { lastClaimedCrash } from '@/app/storage/crash-guard'
 import { kickSyncEngine } from '@/app/storage/sync'
 import { prepareForReload } from '@/app/tabs'
 
@@ -35,6 +36,18 @@ useEventListener(window, 'pagehide', () => {
 onMounted(() => {
   toast.setupGlobalErrorHandler()
   scheduleStartupUpdateCheck(updates)
+
+  // Say so rather than silently skipping it — the document is genuinely
+  // not being synced or opened any more, and the user is the one who has
+  // to decide what to do about that.
+  const crashed = lastClaimedCrash()
+  if (crashed) {
+    toast.error(
+      `"${crashed.label}" stopped responding last time and has been paused. ` +
+        'Other documents are unaffected.'
+    )
+  }
+
   void kickSyncEngine()
 })
 </script>

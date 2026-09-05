@@ -13,6 +13,11 @@ import {
   storageProviderRegistry
 } from '@/app/integrations/storage'
 import { evictLocalFigCache } from '@/app/storage/cache-eviction'
+import {
+  beginRiskyOperation,
+  endRiskyOperation,
+  isQuarantined
+} from '@/app/storage/crash-guard'
 import { getLocalCanvasStore } from '@/app/storage/local-store'
 import { getOutbox } from '@/app/storage/sync/outbox'
 import { setUploadProgress } from '@/app/storage/sync/progress'
@@ -99,9 +104,23 @@ async function runJob(job: OutboxJob): Promise<void> {
     // Superseded by a newer local revision already on disk
     if (meta.revision > job.revision) return
     if (!meta.hasFig) return
-    const fig = await store.readFig(job.canvasId)
-    if (!fig || fig.byteLength === 0) throw new Error('Local document missing for sync')
+
+    // A document that killed the renderer mid-upload last time is not
+    // retried automatically — this pump runs at every page load, so
+    // retrying it would take the tab down again before the app is even
+    // usable, on every single load. See crash-guard.ts.
+    if (isQuarantined(job.canvasId)) {
+      throw new StorageSyncBlockedError(
+        `"${meta.name}" is being skipped because it crashed this tab while uploading`
+      )
+    }
+
+    // A Blob, not the bytes: readFig would allocate the whole document on
+    // this thread, and this runs on the main thread at startup.
+    const fig = await store.readFigBlob(job.canvasId)
+    if (!fig || fig.size === 0) throw new Error('Local document missing for sync')
     setUploadProgress(job.canvasId, 0)
+    beginRiskyOperation({ kind: 'sync-upload', canvasId: job.canvasId, label: meta.name })
     try {
       await adapter.putDocument(
         job.canvasId,
@@ -115,6 +134,7 @@ async function runJob(job: OutboxJob): Promise<void> {
         }
       )
     } finally {
+      endRiskyOperation()
       setUploadProgress(job.canvasId, null)
     }
     // Only mark synced if still on this revision and no other pending work for newer rev

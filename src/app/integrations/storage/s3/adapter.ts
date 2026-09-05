@@ -194,10 +194,14 @@ export function createS3StorageAdapter(runtime: StorageProviderRuntime): S3Stora
 
     async putDocument(id, bytes, metadata, onProgress) {
       const config = await resolveConfig(runtime)
+      // S3 signs the payload, so this one genuinely needs the bytes in
+      // hand — a Blob has to be materialised here. Callers that can avoid
+      // it (the hosted adapter) upload the Blob directly instead.
+      const body = bytes instanceof Blob ? new Uint8Array(await bytes.arrayBuffer()) : bytes
       await putObject(
         config,
         documentFigKey(id),
-        bytes,
+        body,
         'application/octet-stream',
         onProgress
           ? (progress) =>

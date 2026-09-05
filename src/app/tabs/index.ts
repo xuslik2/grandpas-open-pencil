@@ -39,6 +39,10 @@ import {
 } from '@/app/recent-files'
 import { toast } from '@/app/shell/ui'
 import { getLocalCanvasStore } from '@/app/storage/local-store'
+import {
+  beginRiskyOperation,
+  endRiskyOperation
+} from '@/app/storage/crash-guard'
 import { seedStorageCanvasFromRemote } from '@/app/storage/sync/persist'
 import { onStorageWorkspaceEvent } from '@/app/storage/workspace/events'
 import { createFileOpenCoordinator } from '@/app/tabs/open/coordinator'
@@ -405,6 +409,12 @@ export async function openStorageDocumentInNewTab(document: StorageDocument): Pr
     subject: document.name
   })
   let succeeded = false
+  // Recorded before the attempt, cleared in the finally. A marker still
+  // present at next startup means this open killed the renderer rather
+  // than returning — see crash-guard.ts. Opening is user-initiated, so a
+  // quarantined document is still allowed through here; the quarantine
+  // only stops *automatic* work from retrying it.
+  beginRiskyOperation({ kind: 'document-open', canvasId: document.id, label: document.name })
   try {
     load.update({ phase: 'reading', detail: document.name })
     const local = getLocalCanvasStore()
@@ -506,6 +516,7 @@ export async function openStorageDocumentInNewTab(document: StorageDocument): Pr
     }
     throw error
   } finally {
+    endRiskyOperation()
     if (succeeded) load.complete()
   }
 }

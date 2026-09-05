@@ -69,6 +69,15 @@ export function createIdbLocalCanvasStore(): LocalCanvasStore {
       return readBinary('fig', id)
     },
 
+    async readFigBlob(id: string) {
+      const row = await (await database).get('fig', id)
+      if (!row) return null
+      // Rows written before Blob storage are still ArrayBuffer/Uint8Array;
+      // wrapping those does copy once, but new rows are already Blobs and
+      // are returned untouched.
+      return row instanceof Blob ? row : new Blob([row])
+    },
+
     async readThumb(id: string) {
       return readBinary('thumb', id)
     },
